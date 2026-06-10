@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Soluxa Chatbots — Admin</title>
+<link rel="stylesheet" href="/admin/app.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@400;600;700&display=swap" rel="stylesheet" />
+</head>
+<body class="login-body">
+  <main class="login-card">
+    <img class="login-logo" src="https://cdn.shopify.com/s/files/1/0609/6397/9463/files/logo-soluxa.svg?v=1778675983" alt="Soluxa" />
+    <h1>Console Chatbots</h1>
+    <p class="muted">Connectez-vous pour gérer vos assistants.</p>
+    <form id="login-form">
+      <label>Email
+        <input type="email" name="email" required autocomplete="username" />
+      </label>
+      <label>Mot de passe
+        <input type="password" name="password" required autocomplete="current-password" />
+      </label>
+      <button type="submit" class="btn-primary">Se connecter</button>
+      <div id="login-error" class="error" hidden></div>
+    </form>
+  </main>
+  <script>
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const err = document.getElementById('login-error');
+      err.hidden = true;
+      const r = await fetch('/api/admin/login', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: fd.get('email'), password: fd.get('password') }),
+      });
+      if (r.ok) location.href = '/admin/app.html';
+      else { err.textContent = 'Identifiants invalides.'; err.hidden = false; }
+    });
+  </script>
+</body>
+</html>

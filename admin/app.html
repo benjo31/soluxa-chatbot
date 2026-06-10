@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Soluxa Chatbots — Console</title>
+<link rel="stylesheet" href="/admin/app.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@400;600;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <img src="https://cdn.shopify.com/s/files/1/0609/6397/9463/files/logo-soluxa.svg?v=1778675983" alt="Soluxa" />
+      </div>
+      <div class="sidebar-section">
+        <h4>Chatbots</h4>
+        <div class="bot-list" id="bot-list"></div>
+        <button class="btn-secondary" style="margin-top:12px; width:100%" id="new-bot-btn">+ Nouveau chatbot</button>
+      </div>
+      <div class="sidebar-bottom">
+        <div class="muted" id="admin-email"></div>
+        <button class="btn-secondary" id="logout-btn">Déconnexion</button>
+      </div>
+    </aside>
+
+    <main class="main" id="main">
+      <div class="empty">Sélectionnez un chatbot ou créez-en un nouveau.</div>
+    </main>
+  </div>
+
+  <div class="modal-backdrop" id="modal">
+    <div class="modal" id="modal-content"></div>
+  </div>
+  <div class="toast" id="toast"></div>
+
+  <script src="/admin/app.js"></script>
+</body>
+</html>
