@@ -160,6 +160,7 @@ function renderBotView() {
     ['documents', 'Documents'],
     ['contact', 'Contact'],
     ['embed', 'Intégration'],
+    ['test', 'Test'],
     ['leads', 'Leads'],
     ['conversations', 'Conversations'],
   ];
@@ -181,6 +182,7 @@ function renderBotView() {
     case 'documents': renderDocuments(content); break;
     case 'contact': renderContact(content); break;
     case 'embed': renderEmbed(content); break;
+    case 'test': renderTest(content); break;
     case 'leads': renderLeads(content); break;
     case 'conversations': renderConversations(content); break;
   }
@@ -648,4 +650,119 @@ async function showConversation(convId) {
     el('button', { class: 'btn-secondary', onclick: closeModal }, 'Fermer')
   ));
   $('#modal').classList.add('open');
+}
+
+// ------------- TAB: Test Chat -------------
+function renderTest(c) {
+  const b = state.current;
+  if (!b.has_api_key) {
+    c.appendChild(el('div', { class: 'card' },
+      el('p', {}, '⚠️ Configure d\'abord une clé API dans l\'onglet "IA / Clé API" pour pouvoir tester le chatbot.')
+    ));
+    return;
+  }
+
+  const card = el('div', { class: 'card' });
+  card.appendChild(el('h2', {}, 'Test : discuter avec le chatbot'));
+  card.appendChild(el('p', { class: 'muted' }, 'Pose une question pour tester la configuration, le scope et la base de connaissance.'));
+
+  const chat = el('div', { class: 'chat-test' });
+  const msgs = el('div', { class: 'chat-test-messages' });
+  const inputRow = el('div', { class: 'chat-test-input' });
+  const input = el('input', { type: 'text', placeholder: 'Écrivez votre message…' });
+  const sendBtn = el('button', { class: 'btn-primary', disabled: true }, 'Envoyer');
+
+  function addMessage(role, text) {
+    const div = el('div', { class: `chat-test-msg ${role}` }, text);
+    msgs.appendChild(div);
+    msgs.scrollTop = msgs.scrollHeight;
+    return div;
+  }
+
+  function removeTyping() {
+    const typing = msgs.querySelector('.chat-test-msg.typing');
+    if (typing) typing.remove();
+  }
+
+  async function sendMessage() {
+    const txt = input.value.trim();
+    if (!txt || sendBtn.disabled) return;
+    input.value = '';
+    addMessage('user', txt);
+    const typingEl = addMessage('typing', 'Réflexion en cours…');
+
+    sendBtn.disabled = true;
+    input.disabled = true;
+
+    try {
+      const resp = await fetch(`/api/admin/bots/${b.id}/test-chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: txt }),
+        credentials: 'same-origin',
+      });
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let fullReply = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.event === 'done') {
+              removeTyping();
+              addMessage('assistant', fullReply || '(réponse vide)');
+              fullReply = '';
+            } else if (data.delta) {
+              fullReply += data.delta;
+              typingEl.textContent = fullReply;
+              msgs.scrollTop = msgs.scrollHeight;
+            }
+          } catch {}
+        }
+      }
+
+      if (fullReply) {
+        removeTyping();
+        addMessage('assistant', fullReply);
+      }
+    } catch (e) {
+      removeTyping();
+      addMessage('assistant', '❌ Erreur : ' + e.message);
+    } finally {
+      sendBtn.disabled = false;
+      input.disabled = false;
+      input.focus();
+    }
+  }
+
+  sendBtn.addEventListener('click', sendMessage);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+  input.addEventListener('input', () => {
+    sendBtn.disabled = !input.value.trim();
+  });
+
+  inputRow.appendChild(input);
+  inputRow.appendChild(sendBtn);
+  chat.appendChild(msgs);
+  chat.appendChild(inputRow);
+  card.appendChild(chat);
+  c.appendChild(card);
+
+  setTimeout(() => input.focus(), 100);
 }

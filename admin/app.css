@@ -125,6 +125,17 @@ tbody tr:hover { background: var(--soft); }
 .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--text); color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 200; }
 .toast.show { opacity: 1; }
 
+/* Test chat */
+.chat-test { display: flex; flex-direction: column; height: 500px; border: 1px solid var(--border); border-radius: 12px; background: #fff; overflow: hidden; }
+.chat-test-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+.chat-test-msg { padding: 10px 14px; border-radius: 14px; max-width: 85%; white-space: pre-wrap; font-size: 14px; line-height: 1.4; }
+.chat-test-msg.user { background: var(--title); color: #fff; align-self: flex-end; }
+.chat-test-msg.assistant { background: var(--soft); color: var(--text); align-self: flex-start; }
+.chat-test-msg.typing { background: var(--soft); color: var(--muted); align-self: flex-start; font-style: italic; }
+.chat-test-input { display: flex; border-top: 1px solid var(--border); padding: 12px; gap: 8px; }
+.chat-test-input input { flex: 1; }
+.chat-test-input button { flex-shrink: 0; }
+
 @media (max-width: 720px) {
   .app { grid-template-columns: 1fr; }
   .sidebar { border-right: none; border-bottom: 1px solid var(--border); }

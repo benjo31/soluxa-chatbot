@@ -232,6 +232,32 @@ adminRouter.get('/bots/:id/conversations', (req, res) => {
   res.json(rows);
 });
 
+// ---------- ADMIN CHAT TEST (sans persistance) ----------
+adminRouter.post('/bots/:id/test-chat', async (req, res) => {
+  const b = db.prepare('SELECT * FROM bots WHERE id = ?').get(req.params.id);
+  if (!b) return res.status(404).json({ error: 'not_found' });
+  const { message } = req.body || {};
+  if (!message) return res.status(400).json({ error: 'message_required' });
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+
+  try {
+    for await (const chunk of chatStream({ bot: b, conversationId: 'test-' + nanoid(8), userMessage: message })) {
+      res.write(`data: ${JSON.stringify({ delta: chunk })}\n\n`);
+    }
+  } catch (e) {
+    console.error('[admin/test-chat] error', e);
+    res.write(`data: ${JSON.stringify({ delta: 'Erreur serveur.' })}\n\n`);
+  }
+
+  res.write(`data: ${JSON.stringify({ event: 'done' })}\n\n`);
+  res.end();
+});
+
 adminRouter.get('/bots/:id/conversations/:convId/messages', (req, res) => {
   const rows = db.prepare(`
     SELECT m.role, m.content, m.created_at
