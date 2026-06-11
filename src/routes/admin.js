@@ -7,6 +7,7 @@ import { encryptSecret, decryptSecret } from '../crypto.js';
 import { extractContent } from '../ingest/index.js';
 import { testKey } from '../llm/index.js';
 import { config } from '../config.js';
+import { chatStream } from '../chat.js';
 
 export const adminRouter = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
