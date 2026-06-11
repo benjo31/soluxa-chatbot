@@ -233,12 +233,19 @@ adminRouter.get('/bots/:id/conversations', (req, res) => {
   res.json(rows);
 });
 
-// ---------- ADMIN CHAT TEST (sans persistance) ----------
+// ---------- ADMIN CHAT TEST (avec persistance) ----------
 adminRouter.post('/bots/:id/test-chat', async (req, res) => {
   const b = db.prepare('SELECT * FROM bots WHERE id = ?').get(req.params.id);
   if (!b) return res.status(404).json({ error: 'not_found' });
-  const { message } = req.body || {};
+  const { message, conversationId: existingId } = req.body || {};
   if (!message) return res.status(400).json({ error: 'message_required' });
+
+  // Crée ou réutilise une conversation persistante pour le test
+  const conversationId = existingId || ('test-' + nanoid(8));
+  if (!existingId) {
+    db.prepare('INSERT OR IGNORE INTO conversations (id, bot_id, visitor_id) VALUES (?, ?, ?)')
+      .run(conversationId, b.id, 'admin-test');
+  }
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -246,11 +253,10 @@ adminRouter.post('/bots/:id/test-chat', async (req, res) => {
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders?.();
 
-  const testConvId = 'test-' + nanoid(8);
   let full = '';
 
   try {
-    for await (const chunk of chatStream({ bot: b, conversationId: testConvId, userMessage: message })) {
+    for await (const chunk of chatStream({ bot: b, conversationId, userMessage: message })) {
       full += chunk;
       res.write(`data: ${JSON.stringify({ delta: chunk })}\n\n`);
     }
@@ -260,7 +266,14 @@ adminRouter.post('/bots/:id/test-chat', async (req, res) => {
     res.write(`data: ${JSON.stringify({ delta: errMsg })}\n\n`);
   }
 
-  res.write(`data: ${JSON.stringify({ event: 'done' })}\n\n`);
+  // Persister les messages dans le test aussi pour garder un historique
+  if (full) {
+    const { persistMessages } = await import('../chat.js');
+    persistMessages(conversationId, message, full);
+  }
+
+  // Retourner le conversationId pour que le frontend le réutilise
+  res.write(`data: ${JSON.stringify({ event: 'done', conversationId })}\n\n`);
   res.end();
 });
 

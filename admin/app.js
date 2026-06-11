@@ -672,6 +672,8 @@ function renderTest(c) {
   const input = el('input', { type: 'text', placeholder: 'Écrivez votre message…' });
   const sendBtn = el('button', { class: 'btn-primary', disabled: true }, 'Envoyer');
 
+  let testConversationId = null;
+
   function addMessage(role, text) {
     const div = el('div', { class: `chat-test-msg ${role}` }, text);
     msgs.appendChild(div);
@@ -698,7 +700,7 @@ function renderTest(c) {
       const resp = await fetch(`/api/admin/bots/${b.id}/test-chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: txt }),
+        body: JSON.stringify({ message: txt, conversationId: testConversationId }),
         credentials: 'same-origin',
       });
 
@@ -720,6 +722,7 @@ function renderTest(c) {
           try {
             const data = JSON.parse(line.slice(6));
             if (data.event === 'done') {
+              if (data.conversationId) testConversationId = data.conversationId;
               removeTyping();
               addMessage('assistant', fullReply || '(réponse vide)');
               fullReply = '';
