@@ -194,6 +194,18 @@ adminRouter.get('/bots/:id/leads', (req, res) => {
   res.json(rows);
 });
 
+adminRouter.post('/bots/:id/leads', (req, res) => {
+  const b = db.prepare('SELECT id FROM bots WHERE id = ?').get(req.params.id);
+  if (!b) return res.status(404).json({ error: 'not_found' });
+  const { conversationId, name, email, phone, message } = req.body || {};
+  if (!email && !phone) return res.status(400).json({ error: 'email_or_phone_required' });
+  const id = db.prepare(`
+    INSERT INTO leads (bot_id, conversation_id, name, email, phone, message)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(b.id, conversationId || null, name || null, email || null, phone || null, message || null);
+  res.json({ ok: true, id: id.lastInsertRowid });
+});
+
 adminRouter.put('/bots/:id/leads/:leadId', (req, res) => {
   const { status } = req.body || {};
   if (!['new', 'contacted', 'closed'].includes(status)) {

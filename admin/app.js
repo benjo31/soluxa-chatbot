@@ -665,6 +665,7 @@ function renderTest(c) {
   const card = el('div', { class: 'card' });
   card.appendChild(el('h2', {}, 'Test : discuter avec le chatbot'));
   card.appendChild(el('p', { class: 'muted' }, 'Pose une question pour tester la configuration, le scope et la base de connaissance.'));
+  card.appendChild(el('p', { class: 'muted', style: { marginTop: '0' } }, 'Comportement identique au widget public — y compris la capture de leads.'));
 
   const chat = el('div', { class: 'chat-test' });
   const msgs = el('div', { class: 'chat-test-messages' });
@@ -673,6 +674,64 @@ function renderTest(c) {
   const sendBtn = el('button', { class: 'btn-primary', disabled: true }, 'Envoyer');
 
   let testConversationId = null;
+  let leadSubmitted = false;
+
+  // Modal lead (identique au widget)
+  const modalBackdrop = el('div', { class: 'sx-modal-backdrop' });
+  const modal = el('div', { class: 'sx-modal' });
+  const modalName = el('input', { type: 'text', placeholder: 'Votre nom' });
+  const modalEmail = el('input', { type: 'email', placeholder: 'email@exemple.ch' });
+  const modalPhone = el('input', { type: 'tel', placeholder: '+41 …' });
+  const modalMsg = el('textarea', { rows: '3', placeholder: 'Votre demande (facultatif)' });
+  const modalCancel = el('button', { class: 'sx-btn-cancel' }, 'Annuler');
+  const modalSubmit = el('button', { class: 'sx-btn-submit' }, 'Envoyer');
+
+  modal.innerHTML = '';
+  modal.appendChild(el('h3', {}, 'Être recontacté'));
+  modal.appendChild(el('div', { class: 'sx-field' }, el('label', {}, 'Nom'), modalName));
+  modal.appendChild(el('div', { class: 'sx-field' }, el('label', {}, 'Email'), modalEmail));
+  modal.appendChild(el('div', { class: 'sx-field' }, el('label', {}, 'Téléphone'), modalPhone));
+  modal.appendChild(el('div', { class: 'sx-field' }, el('label', {}, 'Message'), modalMsg));
+  modal.appendChild(el('div', { class: 'sx-modal-actions' }, modalCancel, modalSubmit));
+  modalBackdrop.appendChild(modal);
+
+  function openLeadModal(prefill = {}) {
+    if (prefill.email) modalEmail.value = prefill.email;
+    if (prefill.phone) modalPhone.value = prefill.phone;
+    modalBackdrop.classList.add('sx-open');
+  }
+
+  modalCancel.addEventListener('click', () => modalBackdrop.classList.remove('sx-open'));
+  modalBackdrop.addEventListener('click', (e) => { if (e.target === modalBackdrop) modalBackdrop.classList.remove('sx-open'); });
+
+  modalSubmit.addEventListener('click', async () => {
+    const payload = {
+      name: modalName.value.trim(),
+      email: modalEmail.value.trim(),
+      phone: modalPhone.value.trim(),
+      message: modalMsg.value.trim(),
+    };
+    if (!payload.email && !payload.phone) { modalEmail.focus(); return; }
+    modalSubmit.disabled = true;
+    try {
+      await fetch(`/api/admin/bots/${b.id}/leads`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, conversationId: testConversationId }),
+        credentials: 'same-origin',
+      });
+      modal.innerHTML = '';
+      modal.appendChild(el('div', { class: 'sx-thanks' }, 'Merci ! Nous vous recontactons rapidement.'));
+      leadSubmitted = true;
+      setTimeout(() => modalBackdrop.classList.remove('sx-open'), 1500);
+    } catch {
+      modalSubmit.disabled = false;
+    }
+  });
+
+  const container = el('div', { style: { position: 'relative' } }, chat, modalBackdrop);
+  card.appendChild(container);
+  c.appendChild(card);
 
   function addMessage(role, text) {
     const div = el('div', { class: `chat-test-msg ${role}` }, text);
@@ -690,11 +749,19 @@ function renderTest(c) {
     const txt = input.value.trim();
     if (!txt || sendBtn.disabled) return;
     input.value = '';
+
+    // Message utilisateur
     addMessage('user', txt);
-    const typingEl = addMessage('typing', 'Réflexion en cours…');
+
+    // Typing indicator
+    const typingEl = addMessage('typing', '…');
 
     sendBtn.disabled = true;
     input.disabled = true;
+
+    let botMsgAdded = false;
+    const botMsg = el('div', { class: 'chat-test-msg assistant' });
+    let suggestPayload = null;
 
     try {
       const resp = await fetch(`/api/admin/bots/${b.id}/test-chat`, {
@@ -707,7 +774,6 @@ function renderTest(c) {
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
-      let fullReply = '';
 
       while (true) {
         const { done, value } = await reader.read();
@@ -721,31 +787,37 @@ function renderTest(c) {
           if (!line.startsWith('data: ')) continue;
           try {
             const data = JSON.parse(line.slice(6));
-            if (data.event === 'done') {
-              if (data.conversationId) testConversationId = data.conversationId;
-              removeTyping();
-              addMessage('assistant', fullReply || '(réponse vide)');
-              fullReply = '';
-            } else if (data.delta) {
-              fullReply += data.delta;
-              typingEl.textContent = fullReply;
+            if (data.delta) {
+              if (!botMsgAdded) {
+                removeTyping();
+                msgs.appendChild(botMsg);
+                botMsgAdded = true;
+              }
+              botMsg.textContent += data.delta;
               msgs.scrollTop = msgs.scrollHeight;
+            } else if (data.event === 'done') {
+              if (data.conversationId) testConversationId = data.conversationId;
+            } else if (data.event === 'suggest_lead') {
+              suggestPayload = { email: data.email, phone: data.phone };
             }
           } catch {}
         }
-      }
-
-      if (fullReply) {
-        removeTyping();
-        addMessage('assistant', fullReply);
       }
     } catch (e) {
       removeTyping();
       addMessage('assistant', '❌ Erreur : ' + e.message);
     } finally {
+      if (typingEl.parentNode) typingEl.remove();
       sendBtn.disabled = false;
       input.disabled = false;
       input.focus();
+
+      // Bouton "Être recontacté" — identique au widget
+      if (suggestPayload && b.lead_capture_enabled && !leadSubmitted) {
+        const cta = el('button', { class: 'sx-lead-cta', onclick: () => openLeadModal(suggestPayload) }, 'Être recontacté');
+        msgs.appendChild(cta);
+        msgs.scrollTop = msgs.scrollHeight;
+      }
     }
   }
 
@@ -764,8 +836,6 @@ function renderTest(c) {
   inputRow.appendChild(sendBtn);
   chat.appendChild(msgs);
   chat.appendChild(inputRow);
-  card.appendChild(chat);
-  c.appendChild(card);
 
   setTimeout(() => input.focus(), 100);
 }
