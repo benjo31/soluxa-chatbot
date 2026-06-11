@@ -245,13 +245,18 @@ adminRouter.post('/bots/:id/test-chat', async (req, res) => {
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders?.();
 
+  const testConvId = 'test-' + nanoid(8);
+  let full = '';
+
   try {
-    for await (const chunk of chatStream({ bot: b, conversationId: 'test-' + nanoid(8), userMessage: message })) {
+    for await (const chunk of chatStream({ bot: b, conversationId: testConvId, userMessage: message })) {
+      full += chunk;
       res.write(`data: ${JSON.stringify({ delta: chunk })}\n\n`);
     }
   } catch (e) {
-    console.error('[admin/test-chat] error', e);
-    res.write(`data: ${JSON.stringify({ delta: 'Erreur serveur.' })}\n\n`);
+    console.error('[admin/test-chat] exception:', e?.stack || e?.message || e);
+    const errMsg = 'Erreur : ' + (e?.message || 'erreur inconnue, vérifie les logs serveur');
+    res.write(`data: ${JSON.stringify({ delta: errMsg })}\n\n`);
   }
 
   res.write(`data: ${JSON.stringify({ event: 'done' })}\n\n`);
