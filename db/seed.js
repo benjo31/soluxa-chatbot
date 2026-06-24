@@ -33,8 +33,8 @@ async function main() {
   }
 
   // 2 bots de démo si aucun bot
-  const { count } = await sb.from('bots').select('id', { count: 'exact', head: true });
-  if (count === 0) {
+  const { count: botCount } = await sb.from('bots').select('id', { count: 'exact', head: true }).single();
+  if (!botCount || botCount === 0) {
     async function make(name, audience, welcome, scope, refusal) {
       const id = nanoid(12);
       const { error } = await sb.from('bots').insert({
