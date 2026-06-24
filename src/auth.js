@@ -1,43 +1,58 @@
 import bcrypt from 'bcrypt';
 import crypto from 'node:crypto';
-import { db } from './db.js';
+import { sb } from './db.js';
 
 const SESSION_TTL_DAYS = 14;
 
 export async function verifyAdmin(email, password) {
-  const admin = db.prepare('SELECT * FROM admins WHERE email = ?').get(email);
+  const { data: admin, error } = await sb
+    .from('admins')
+    .select('*')
+    .eq('email', email)
+    .maybeSingle();
+  if (error) throw error;
   if (!admin) return null;
   const ok = await bcrypt.compare(password, admin.password_hash);
   return ok ? admin : null;
 }
 
-export function createSession(adminId) {
+export async function createSession(adminId) {
   const token = crypto.randomBytes(32).toString('hex');
-  const expires = new Date(Date.now() + SESSION_TTL_DAYS * 86400 * 1000).toISOString();
-  db.prepare('INSERT INTO sessions (token, admin_id, expires_at) VALUES (?, ?, ?)').run(token, adminId, expires);
-  return { token, expiresAt: expires };
+  const expiresAt = new Date(Date.now() + SESSION_TTL_DAYS * 86400 * 1000).toISOString();
+  const { data, error } = await sb
+    .from('sessions')
+    .insert({ token, admin_id: adminId, expires_at: expiresAt })
+    .select()
+    .maybeSingle();
+  if (error) throw error;
+  return { token, expiresAt };
 }
 
-export function destroySession(token) {
-  db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+export async function destroySession(token) {
+  const { error } = await sb.from('sessions').delete().eq('token', token);
+  if (error) throw error;
 }
 
-export function getAdminFromToken(token) {
+export async function getAdminFromToken(token) {
   if (!token) return null;
-  const row = db.prepare(`
-    SELECT a.id, a.email FROM sessions s
-    JOIN admins a ON a.id = s.admin_id
-    WHERE s.token = ? AND s.expires_at > datetime('now')
-  `).get(token);
-  return row || null;
+  const { data: row, error } = await sb
+    .from('sessions')
+    .select('admin_id, admins!inner(id, email)')
+    .eq('token', token)
+    .gte('expires_at', new Date().toISOString())
+    .maybeSingle();
+  if (error) return null;
+  if (!row) return null;
+  return { id: row.admin_id, email: (row.admins || {}).email };
 }
 
 export function requireAdmin(req, res, next) {
   const token = req.cookies?.sx_session;
-  const admin = getAdminFromToken(token);
-  if (!admin) return res.status(401).json({ error: 'unauthorized' });
-  req.admin = admin;
-  next();
+  getAdminFromToken(token).then(admin => {
+    if (!admin) return res.status(401).json({ error: 'unauthorized' });
+    req.admin = admin;
+    next();
+  }).catch(() => res.status(401).json({ error: 'unauthorized' }));
 }
 
 export async function hashPassword(password) {

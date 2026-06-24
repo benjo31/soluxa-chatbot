@@ -1,7 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 import { nanoid } from 'nanoid';
-import { db } from '../db.js';
+import { sb } from '../db.js';
 import { verifyAdmin, createSession, destroySession, requireAdmin } from '../auth.js';
 import { encryptSecret, decryptSecret } from '../crypto.js';
 import { extractContent } from '../ingest/index.js';
@@ -26,8 +26,8 @@ adminRouter.post('/login', async (req, res) => {
   const { email, password } = req.body || {};
   const admin = await verifyAdmin(email, password);
   if (!admin) return res.status(401).json({ error: 'invalid_credentials' });
-  const { token } = createSession(admin.id);
-  res.cookie('sx_session', token, {
+  const session = await createSession(admin.id);
+  res.cookie('sx_session', session.token, {
     httpOnly: true, sameSite: 'lax',
     maxAge: 14 * 86400 * 1000,
     secure: req.secure || req.headers['x-forwarded-proto'] === 'https',
@@ -35,9 +35,9 @@ adminRouter.post('/login', async (req, res) => {
   res.json({ ok: true, email: admin.email });
 });
 
-adminRouter.post('/logout', (req, res) => {
+adminRouter.post('/logout', async (req, res) => {
   const t = req.cookies?.sx_session;
-  if (t) destroySession(t);
+  if (t) await destroySession(t);
   res.clearCookie('sx_session');
   res.json({ ok: true });
 });
@@ -60,86 +60,87 @@ function serializeBot(b) {
   };
 }
 
-adminRouter.get('/bots', (req, res) => {
-  const rows = db.prepare('SELECT * FROM bots ORDER BY created_at DESC').all();
-  res.json(rows.map(serializeBot));
+adminRouter.get('/bots', async (req, res) => {
+  const { data, error } = await sb.from('bots').select('*').order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json((data || []).map(serializeBot));
 });
 
-adminRouter.post('/bots', (req, res) => {
+adminRouter.post('/bots', async (req, res) => {
   const { name, audience } = req.body || {};
   if (!name || !['public', 'internal'].includes(audience)) {
     return res.status(400).json({ error: 'invalid_input' });
   }
   const id = nanoid(12);
-  db.prepare(`
-    INSERT INTO bots (id, name, audience, system_prompt, scope_topics, refusal_message,
-                      welcome_message, contact_info_json, branding_json,
-                      llm_provider, llm_model, lead_capture_enabled, allowed_origins, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-  `).run(
+  const { data, error } = await sb.from('bots').insert({
     id, name, audience,
-    `Tu es l'assistant ${name}. Tu es professionnel, concis et utile. Tu réponds en français.`,
-    'Les sujets liés à l\'entreprise.',
-    'Désolé, je ne peux pas répondre à cette question.',
-    'Bonjour ! Comment puis-je vous aider ?',
-    JSON.stringify({ email: '', phone: '', address: '', hours: '', url: '' }),
-    JSON.stringify(SOLUXA_BRANDING),
-    'openai', 'gpt-4o-mini', audience === 'public' ? 1 : 0,
-    '*'
-  );
-  res.json(serializeBot(db.prepare('SELECT * FROM bots WHERE id = ?').get(id)));
+    system_prompt: `Tu es l'assistant ${name}. Tu es professionnel, concis et utile. Tu réponds en français.`,
+    scope_topics: 'Les sujets liés à l\'entreprise.',
+    refusal_message: 'Désolé, je ne peux pas répondre à cette question.',
+    welcome_message: 'Bonjour ! Comment puis-je vous aider ?',
+    contact_info_json: JSON.stringify({ email: '', phone: '', address: '', hours: '', url: '' }),
+    branding_json: JSON.stringify(SOLUXA_BRANDING),
+    llm_provider: 'openai',
+    llm_model: 'gpt-4o-mini',
+    lead_capture_enabled: audience === 'public' ? 1 : 0,
+    allowed_origins: '*',
+    updated_at: new Date().toISOString(),
+  }).select().maybeSingle();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(serializeBot(data));
 });
 
-adminRouter.get('/bots/:id', (req, res) => {
-  const b = db.prepare('SELECT * FROM bots WHERE id = ?').get(req.params.id);
-  if (!b) return res.status(404).json({ error: 'not_found' });
-  res.json(serializeBot(b));
+adminRouter.get('/bots/:id', async (req, res) => {
+  const { data, error } = await sb.from('bots').select('*').eq('id', req.params.id).maybeSingle();
+  if (error) return res.status(500).json({ error: error.message });
+  if (!data) return res.status(404).json({ error: 'not_found' });
+  res.json(serializeBot(data));
 });
 
-adminRouter.put('/bots/:id', (req, res) => {
-  const b = db.prepare('SELECT * FROM bots WHERE id = ?').get(req.params.id);
-  if (!b) return res.status(404).json({ error: 'not_found' });
+adminRouter.put('/bots/:id', async (req, res) => {
+  const { data: existing, error: findErr } = await sb.from('bots').select('id, llm_api_key_encrypted').eq('id', req.params.id).maybeSingle();
+  if (findErr) return res.status(500).json({ error: findErr.message });
+  if (!existing) return res.status(404).json({ error: 'not_found' });
 
   const allowed = [
     'name', 'audience', 'system_prompt', 'scope_topics', 'refusal_message',
     'welcome_message', 'llm_provider', 'llm_model', 'lead_capture_enabled', 'allowed_origins',
   ];
-  const fields = [];
-  const values = [];
+  const updates = {};
   for (const k of allowed) {
     if (k in req.body) {
-      fields.push(`${k} = ?`);
-      values.push(typeof req.body[k] === 'boolean' ? (req.body[k] ? 1 : 0) : req.body[k]);
+      updates[k] = typeof req.body[k] === 'boolean' ? (req.body[k] ? 1 : 0) : req.body[k];
     }
   }
   if ('contact_info' in req.body) {
-    fields.push('contact_info_json = ?');
-    values.push(JSON.stringify(req.body.contact_info));
+    updates.contact_info_json = JSON.stringify(req.body.contact_info);
   }
   if ('branding' in req.body) {
-    fields.push('branding_json = ?');
-    values.push(JSON.stringify(req.body.branding));
+    updates.branding_json = JSON.stringify(req.body.branding);
   }
   if ('llm_api_key' in req.body && req.body.llm_api_key) {
-    fields.push('llm_api_key_encrypted = ?');
-    values.push(encryptSecret(req.body.llm_api_key));
+    updates.llm_api_key_encrypted = encryptSecret(req.body.llm_api_key);
   }
-  fields.push("updated_at = datetime('now')");
-  if (fields.length) {
-    values.push(req.params.id);
-    db.prepare(`UPDATE bots SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+  updates.updated_at = new Date().toISOString();
+
+  if (Object.keys(updates).length > 1) { // more than just updated_at
+    const { error: updErr } = await sb.from('bots').update(updates).eq('id', req.params.id);
+    if (updErr) return res.status(500).json({ error: updErr.message });
   }
-  res.json(serializeBot(db.prepare('SELECT * FROM bots WHERE id = ?').get(req.params.id)));
+  const { data: updated } = await sb.from('bots').select('*').eq('id', req.params.id).maybeSingle();
+  res.json(serializeBot(updated));
 });
 
-adminRouter.delete('/bots/:id', (req, res) => {
-  db.prepare('DELETE FROM bots WHERE id = ?').run(req.params.id);
+adminRouter.delete('/bots/:id', async (req, res) => {
+  const { error } = await sb.from('bots').delete().eq('id', req.params.id);
+  if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true });
 });
 
 // ---------- LLM TEST ----------
 adminRouter.post('/bots/:id/test-llm', async (req, res) => {
-  const b = db.prepare('SELECT * FROM bots WHERE id = ?').get(req.params.id);
+  const { data: b, error } = await sb.from('bots').select('*').eq('id', req.params.id).maybeSingle();
+  if (error) return res.status(500).json({ error: error.message });
   if (!b) return res.status(404).json({ error: 'not_found' });
   const apiKey = req.body?.llm_api_key || decryptSecret(b.llm_api_key_encrypted);
   if (!apiKey) return res.status(400).json({ error: 'no_api_key' });
@@ -154,77 +155,99 @@ adminRouter.post('/bots/:id/test-llm', async (req, res) => {
 });
 
 // ---------- DOCUMENTS ----------
-adminRouter.get('/bots/:id/documents', (req, res) => {
-  const rows = db
-    .prepare('SELECT id, filename, mime, size_bytes, char_count, created_at FROM documents WHERE bot_id = ? ORDER BY id DESC')
-    .all(req.params.id);
-  const total = rows.reduce((s, r) => s + (r.char_count || 0), 0);
-  res.json({ documents: rows, total_chars: total, limit_chars: config.maxKnowledgeChars });
+adminRouter.get('/bots/:id/documents', async (req, res) => {
+  const { data: rows, error } = await sb
+    .from('documents')
+    .select('id, filename, mime, size_bytes, char_count, created_at')
+    .eq('bot_id', req.params.id)
+    .order('id', { ascending: false });
+  if (error) return res.status(500).json({ error: error.message });
+  const total = (rows || []).reduce((s, r) => s + (r.char_count || 0), 0);
+  res.json({ documents: rows || [], total_chars: total, limit_chars: config.maxKnowledgeChars });
 });
 
 adminRouter.post('/bots/:id/documents', upload.single('file'), async (req, res) => {
-  const b = db.prepare('SELECT id FROM bots WHERE id = ?').get(req.params.id);
-  if (!b) return res.status(404).json({ error: 'not_found' });
+  const { data: b, error: findErr } = await sb.from('bots').select('id').eq('id', req.params.id).maybeSingle();
+  if (findErr || !b) return res.status(404).json({ error: 'not_found' });
   if (!req.file) return res.status(400).json({ error: 'no_file' });
   try {
     const text = await extractContent({
       buffer: req.file.buffer, mime: req.file.mimetype, filename: req.file.originalname,
     });
-    const r = db.prepare(`
-      INSERT INTO documents (bot_id, filename, mime, size_bytes, extracted_text, char_count)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(b.id, req.file.originalname, req.file.mimetype, req.file.size, text, text.length);
-    res.json({ id: r.lastInsertRowid, char_count: text.length, filename: req.file.originalname });
+    const { data, error } = await sb.from('documents').insert({
+      bot_id: b.id,
+      filename: req.file.originalname,
+      mime: req.file.mimetype,
+      size_bytes: req.file.size,
+      extracted_text: text,
+      char_count: text.length,
+    }).select().maybeSingle();
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ id: data.id, char_count: text.length, filename: req.file.originalname });
   } catch (e) {
     console.error('[admin/documents] extract error', e);
     res.status(400).json({ error: 'extract_failed', detail: e?.message });
   }
 });
 
-adminRouter.delete('/bots/:id/documents/:docId', (req, res) => {
-  db.prepare('DELETE FROM documents WHERE id = ? AND bot_id = ?').run(req.params.docId, req.params.id);
+adminRouter.delete('/bots/:id/documents/:docId', async (req, res) => {
+  const { error } = await sb.from('documents').delete().eq('id', req.params.docId).eq('bot_id', req.params.id);
+  if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true });
 });
 
 // ---------- LEADS ----------
-adminRouter.get('/bots/:id/leads', (req, res) => {
-  const rows = db
-    .prepare('SELECT * FROM leads WHERE bot_id = ? ORDER BY created_at DESC')
-    .all(req.params.id);
-  res.json(rows);
+adminRouter.get('/bots/:id/leads', async (req, res) => {
+  const { data, error } = await sb
+    .from('leads')
+    .select('*')
+    .eq('bot_id', req.params.id)
+    .order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data || []);
 });
 
-adminRouter.post('/bots/:id/leads', (req, res) => {
-  const b = db.prepare('SELECT id FROM bots WHERE id = ?').get(req.params.id);
-  if (!b) return res.status(404).json({ error: 'not_found' });
+adminRouter.post('/bots/:id/leads', async (req, res) => {
+  const { data: b, error: findErr } = await sb.from('bots').select('id').eq('id', req.params.id).maybeSingle();
+  if (findErr || !b) return res.status(404).json({ error: 'not_found' });
   const { conversationId, name, email, phone, message } = req.body || {};
   if (!email && !phone) return res.status(400).json({ error: 'email_or_phone_required' });
-  const id = db.prepare(`
-    INSERT INTO leads (bot_id, conversation_id, name, email, phone, message)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(b.id, conversationId || null, name || null, email || null, phone || null, message || null);
-  res.json({ ok: true, id: id.lastInsertRowid });
+  const { data, error } = await sb.from('leads').insert({
+    bot_id: b.id,
+    conversation_id: conversationId || null,
+    name: name || null,
+    email: email || null,
+    phone: phone || null,
+    message: message || null,
+  }).select().maybeSingle();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true, id: data.id });
 });
 
-adminRouter.put('/bots/:id/leads/:leadId', (req, res) => {
+adminRouter.put('/bots/:id/leads/:leadId', async (req, res) => {
   const { status } = req.body || {};
   if (!['new', 'contacted', 'closed'].includes(status)) {
     return res.status(400).json({ error: 'invalid_status' });
   }
-  db.prepare('UPDATE leads SET status = ? WHERE id = ? AND bot_id = ?')
-    .run(status, req.params.leadId, req.params.id);
+  const { error } = await sb.from('leads').update({ status }).eq('id', req.params.leadId).eq('bot_id', req.params.id);
+  if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true });
 });
 
-adminRouter.get('/bots/:id/leads.csv', (req, res) => {
-  const rows = db.prepare('SELECT * FROM leads WHERE bot_id = ? ORDER BY created_at DESC').all(req.params.id);
+adminRouter.get('/bots/:id/leads.csv', async (req, res) => {
+  const { data: rows, error } = await sb
+    .from('leads')
+    .select('*')
+    .eq('bot_id', req.params.id)
+    .order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ error: error.message });
   const header = 'id,created_at,status,name,email,phone,message\n';
   const esc = (v) => {
     if (v == null) return '';
     const s = String(v).replace(/"/g, '""');
     return `"${s}"`;
   };
-  const body = rows.map((r) =>
+  const body = (rows || []).map((r) =>
     [r.id, r.created_at, r.status, r.name, r.email, r.phone, r.message].map(esc).join(',')
   ).join('\n');
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -233,30 +256,39 @@ adminRouter.get('/bots/:id/leads.csv', (req, res) => {
 });
 
 // ---------- CONVERSATIONS ----------
-adminRouter.get('/bots/:id/conversations', (req, res) => {
-  const rows = db.prepare(`
-    SELECT c.id, c.visitor_id, c.started_at, c.last_message_at,
-           (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) AS msg_count
-    FROM conversations c
-    WHERE c.bot_id = ?
-    ORDER BY COALESCE(c.last_message_at, c.started_at) DESC
-    LIMIT 100
-  `).all(req.params.id);
+adminRouter.get('/bots/:id/conversations', async (req, res) => {
+  const { data: convs, error } = await sb
+    .from('conversations')
+    .select('id, visitor_id, started_at, last_message_at')
+    .eq('bot_id', req.params.id)
+    .order('last_message_at', { ascending: false, nullsFirst: false })
+    .limit(100);
+  if (error) return res.status(500).json({ error: error.message });
+
+  // Get message counts for each conversation
+  const rows = [];
+  for (const c of convs || []) {
+    const { count } = await sb
+      .from('messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('conversation_id', c.id);
+    rows.push({ ...c, msg_count: count });
+  }
   res.json(rows);
 });
 
 // ---------- ADMIN CHAT TEST (avec persistance) ----------
 adminRouter.post('/bots/:id/test-chat', async (req, res) => {
-  const b = db.prepare('SELECT * FROM bots WHERE id = ?').get(req.params.id);
-  if (!b) return res.status(404).json({ error: 'not_found' });
+  const { data: b, error } = await sb.from('bots').select('*').eq('id', req.params.id).maybeSingle();
+  if (error || !b) return res.status(404).json({ error: 'not_found' });
   const { message, conversationId: existingId } = req.body || {};
   if (!message) return res.status(400).json({ error: 'message_required' });
 
-  // Crée ou réutilise une conversation persistante pour le test
   const conversationId = existingId || ('test-' + nanoid(8));
   if (!existingId) {
-    db.prepare('INSERT OR IGNORE INTO conversations (id, bot_id, visitor_id) VALUES (?, ?, ?)')
-      .run(conversationId, b.id, 'admin-test');
+    await sb.from('conversations').upsert({
+      id: conversationId, bot_id: b.id, visitor_id: 'admin-test',
+    }, { onConflict: 'id', ignoreDuplicates: true });
   }
 
   res.setHeader('Content-Type', 'text/event-stream');
@@ -278,24 +310,22 @@ adminRouter.post('/bots/:id/test-chat', async (req, res) => {
     res.write(`data: ${JSON.stringify({ delta: errMsg })}\n\n`);
   }
 
-  // Persister les messages dans le test aussi pour garder un historique
   if (full) {
     const { persistMessages } = await import('../chat.js');
     persistMessages(conversationId, message, full);
   }
 
-  // Retourner le conversationId pour que le frontend le réutilise
   res.write(`data: ${JSON.stringify({ event: 'done', conversationId })}\n\n`);
   res.end();
 });
 
-adminRouter.get('/bots/:id/conversations/:convId/messages', (req, res) => {
-  const rows = db.prepare(`
-    SELECT m.role, m.content, m.created_at
-    FROM messages m
-    JOIN conversations c ON c.id = m.conversation_id
-    WHERE c.bot_id = ? AND c.id = ? AND m.role IN ('user','assistant')
-    ORDER BY m.id
-  `).all(req.params.id, req.params.convId);
-  res.json(rows);
+adminRouter.get('/bots/:id/conversations/:convId/messages', async (req, res) => {
+  const { data: rows, error } = await sb
+    .from('messages')
+    .select('role, content, created_at')
+    .eq('conversation_id', req.params.convId)
+    .in('role', ['user', 'assistant'])
+    .order('id', { ascending: true });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(rows || []);
 });

@@ -1,6 +1,6 @@
 import express from 'express';
 import { nanoid } from 'nanoid';
-import { db } from '../db.js';
+import { sb } from '../db.js';
 import { getBot, chatStream, persistMessages } from '../chat.js';
 import { detectLeadIntent, createLead } from '../leads.js';
 
@@ -20,15 +20,15 @@ function applyCors(req, res, bot) {
   }
 }
 
-publicRouter.options('/bots/:id/*', (req, res) => {
-  const bot = getBot(req.params.id);
+publicRouter.options('/bots/:id/*', async (req, res) => {
+  const bot = await getBot(req.params.id);
   if (bot) applyCors(req, res, bot);
   res.sendStatus(204);
 });
 
-// Config publique : ce que le widget a besoin de connaître (rien de sensible)
-publicRouter.get('/bots/:id/config', (req, res) => {
-  const bot = getBot(req.params.id);
+// Config publique
+publicRouter.get('/bots/:id/config', async (req, res) => {
+  const bot = await getBot(req.params.id);
   if (!bot) return res.status(404).json({ error: 'not_found' });
   applyCors(req, res, bot);
   res.json({
@@ -42,27 +42,36 @@ publicRouter.get('/bots/:id/config', (req, res) => {
 });
 
 // Crée une conversation
-publicRouter.post('/bots/:id/conversation', (req, res) => {
-  const bot = getBot(req.params.id);
+publicRouter.post('/bots/:id/conversation', async (req, res) => {
+  const bot = await getBot(req.params.id);
   if (!bot) return res.status(404).json({ error: 'not_found' });
   applyCors(req, res, bot);
   const id = nanoid(16);
   const visitorId = req.body?.visitorId || nanoid(20);
-  db.prepare('INSERT INTO conversations (id, bot_id, visitor_id) VALUES (?, ?, ?)').run(id, bot.id, visitorId);
+  const { error } = await sb.from('conversations').insert({ id, bot_id: bot.id, visitor_id: visitorId });
+  if (error) {
+    console.error('[public/conversation] error', error);
+    return res.status(500).json({ error: 'failed' });
+  }
   res.json({ conversationId: id, visitorId });
 });
 
 // Chat SSE
 publicRouter.post('/bots/:id/chat', async (req, res) => {
-  const bot = getBot(req.params.id);
+  const bot = await getBot(req.params.id);
   if (!bot) return res.status(404).json({ error: 'not_found' });
   applyCors(req, res, bot);
 
   const { conversationId, message } = req.body || {};
   if (!conversationId || !message) return res.status(400).json({ error: 'missing_fields' });
 
-  const conv = db.prepare('SELECT id FROM conversations WHERE id = ? AND bot_id = ?').get(conversationId, bot.id);
-  if (!conv) return res.status(404).json({ error: 'conversation_not_found' });
+  const { data: conv, error: convErr } = await sb
+    .from('conversations')
+    .select('id')
+    .eq('id', conversationId)
+    .eq('bot_id', bot.id)
+    .maybeSingle();
+  if (convErr || !conv) return res.status(404).json({ error: 'conversation_not_found' });
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -81,7 +90,7 @@ publicRouter.post('/bots/:id/chat', async (req, res) => {
     res.write(`data: ${JSON.stringify({ delta: 'Erreur serveur.' })}\n\n`);
   }
 
-  persistMessages(conversationId, message, full);
+  await persistMessages(conversationId, message, full);
 
   // Détection lead
   if (bot.lead_capture_enabled) {
@@ -96,17 +105,17 @@ publicRouter.post('/bots/:id/chat', async (req, res) => {
 });
 
 // Création de lead
-publicRouter.post('/bots/:id/lead', (req, res) => {
-  const bot = getBot(req.params.id);
+publicRouter.post('/bots/:id/lead', async (req, res) => {
+  const bot = await getBot(req.params.id);
   if (!bot) return res.status(404).json({ error: 'not_found' });
   applyCors(req, res, bot);
 
   const { conversationId, name, email, phone, message } = req.body || {};
   if (!email && !phone) return res.status(400).json({ error: 'email_or_phone_required' });
 
-  const id = createLead({
+  const leadId = await createLead({
     botId: bot.id, conversationId,
     name, email, phone, message,
   });
-  res.json({ ok: true, id });
+  res.json({ ok: true, id: leadId });
 });

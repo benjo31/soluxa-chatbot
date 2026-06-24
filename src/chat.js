@@ -1,13 +1,16 @@
-import { db } from './db.js';
+import { sb } from './db.js';
 import { config } from './config.js';
 import { decryptSecret } from './crypto.js';
 import { streamChat } from './llm/index.js';
 
-function buildKnowledge(botId) {
-  const docs = db
-    .prepare('SELECT filename, extracted_text FROM documents WHERE bot_id = ? ORDER BY id')
-    .all(botId);
-  if (docs.length === 0) return '';
+async function buildKnowledge(botId) {
+  const { data: docs, error } = await sb
+    .from('documents')
+    .select('filename, extracted_text')
+    .eq('bot_id', botId)
+    .order('id', { ascending: true });
+  if (error) throw error;
+  if (!docs || docs.length === 0) return '';
   let out = '';
   for (const d of docs) {
     const piece = `\n\n--- DOCUMENT: ${d.filename} ---\n${d.extracted_text || ''}`;
@@ -23,8 +26,7 @@ function buildKnowledge(botId) {
 
 export function buildSystemPrompt(bot) {
   const contact = bot.contact_info_json ? JSON.parse(bot.contact_info_json) : {};
-  const knowledge = buildKnowledge(bot.id);
-
+  // buildKnowledge is now async — will be called in chatStream
   const contactLines = Object.entries(contact)
     .filter(([, v]) => v && String(v).trim())
     .map(([k, v]) => `- ${k}: ${v}`)
@@ -50,27 +52,31 @@ export function buildSystemPrompt(bot) {
       : '',
     '',
     'BASE DE CONNAISSANCE :',
-    knowledge || '(aucun document fourni)',
+    '(les documents seront chargés dynamiquement)',
   ].filter(Boolean).join('\n');
 }
 
-export function getBot(id) {
-  return db.prepare('SELECT * FROM bots WHERE id = ?').get(id);
+export async function getBot(id) {
+  const { data, error } = await sb.from('bots').select('*').eq('id', id).maybeSingle();
+  if (error) throw error;
+  return data;
 }
 
 export async function* chatStream({ bot, conversationId, userMessage }) {
-  const sys = buildSystemPrompt(bot);
+  const knowledge = await buildKnowledge(bot.id);
+  const sys = buildSystemPrompt(bot) + '\n\n' + (knowledge ? `BASE DE CONNAISSANCE :\n${knowledge}` : '');
 
-  // Historique récent
-  const history = db
-    .prepare(`
-      SELECT role, content FROM messages
-      WHERE conversation_id = ? AND role IN ('user','assistant')
-      ORDER BY id DESC LIMIT ?
-    `)
-    .all(conversationId, config.conversationWindow)
-    .reverse();
+  // History
+  const { data: rawHistory, error } = await sb
+    .from('messages')
+    .select('role, content')
+    .eq('conversation_id', conversationId)
+    .in('role', ['user', 'assistant'])
+    .order('id', { ascending: false })
+    .limit(config.conversationWindow);
+  if (error) throw error;
 
+  const history = (rawHistory || []).reverse();
   history.push({ role: 'user', content: userMessage });
 
   const apiKey = decryptSecret(bot.llm_api_key_encrypted);
@@ -99,12 +105,20 @@ export async function* chatStream({ bot, conversationId, userMessage }) {
   return full;
 }
 
-export function persistMessages(conversationId, userMessage, assistantMessage) {
-  const ins = db.prepare('INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)');
-  const tx = db.transaction(() => {
-    ins.run(conversationId, 'user', userMessage);
-    ins.run(conversationId, 'assistant', assistantMessage);
-    db.prepare("UPDATE conversations SET last_message_at = datetime('now') WHERE id = ?").run(conversationId);
-  });
-  tx();
+export async function persistMessages(conversationId, userMessage, assistantMessage) {
+  const { error: e1 } = await sb
+    .from('messages')
+    .insert({ conversation_id: conversationId, role: 'user', content: userMessage });
+  if (e1) throw e1;
+  
+  const { error: e2 } = await sb
+    .from('messages')
+    .insert({ conversation_id: conversationId, role: 'assistant', content: assistantMessage });
+  if (e2) throw e2;
+
+  const { error: e3 } = await sb
+    .from('conversations')
+    .update({ last_message_at: new Date().toISOString() })
+    .eq('id', conversationId);
+  if (e3) throw e3;
 }

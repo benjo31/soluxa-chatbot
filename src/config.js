@@ -15,6 +15,11 @@ export const config = {
   root,
   port: parseInt(process.env.PORT || '3001', 10),
   publicBaseUrl: process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3001}`,
+  // Supabase
+  supabaseUrl: required('SUPABASE_URL'),
+  supabaseKey: required('SUPABASE_SERVICE_KEY'),
+
+  // Local data dir (for uploads only now)
   databasePath: path.resolve(root, process.env.DATABASE_PATH || './data/soluxa.db'),
   uploadsPath: path.resolve(root, process.env.UPLOADS_PATH || './data/uploads'),
   masterKey: required('MASTER_KEY'),

@@ -1,5 +1,5 @@
 import { nanoid } from 'nanoid';
-import { db } from '../src/db.js';
+import { sb } from '../src/db.js';
 import { hashPassword } from '../src/auth.js';
 import { config } from '../src/config.js';
 
@@ -22,53 +22,52 @@ const SOLUXA_CONTACT = {
 
 async function main() {
   // Admin par défaut
-  const exists = db.prepare('SELECT id FROM admins WHERE email = ?').get(config.adminEmail);
-  if (!exists) {
+  const { data: existing } = await sb.from('admins').select('id').eq('email', config.adminEmail).maybeSingle();
+  if (!existing) {
     const hash = await hashPassword(config.adminPassword);
-    db.prepare('INSERT INTO admins (email, password_hash) VALUES (?, ?)').run(config.adminEmail, hash);
+    const { error } = await sb.from('admins').insert({ email: config.adminEmail, password_hash: hash });
+    if (error) throw error;
     console.log(`[seed] Admin créé : ${config.adminEmail} / ${config.adminPassword}`);
   } else {
     console.log(`[seed] Admin déjà existant : ${config.adminEmail}`);
   }
 
   // 2 bots de démo si aucun bot
-  const botCount = db.prepare('SELECT COUNT(*) AS n FROM bots').get().n;
-  if (botCount === 0) {
-    const make = (name, audience, welcome, scope, refusal) => {
+  const { count } = await sb.from('bots').select('id', { count: 'exact', head: true });
+  if (count === 0) {
+    async function make(name, audience, welcome, scope, refusal) {
       const id = nanoid(12);
-      db.prepare(`
-        INSERT INTO bots
-          (id, name, audience, system_prompt, scope_topics, refusal_message,
-           welcome_message, contact_info_json, branding_json,
-           llm_provider, llm_model, lead_capture_enabled, allowed_origins, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-      `).run(
+      const { error } = await sb.from('bots').insert({
         id, name, audience,
-        `Tu es l'assistant ${name}. Tu es professionnel, concis et utile. Tu réponds en français.`,
-        scope,
-        refusal,
-        welcome,
-        JSON.stringify(SOLUXA_CONTACT),
-        JSON.stringify(SOLUXA_BRANDING),
-        'openai', 'gpt-4o-mini', audience === 'public' ? 1 : 0,
-        '*'
-      );
+        system_prompt: `Tu es l'assistant ${name}. Tu es professionnel, concis et utile. Tu réponds en français.`,
+        scope_topics: scope,
+        refusal_message: refusal,
+        welcome_message: welcome,
+        contact_info_json: JSON.stringify(SOLUXA_CONTACT),
+        branding_json: JSON.stringify(SOLUXA_BRANDING),
+        llm_provider: 'openai',
+        llm_model: 'gpt-4o-mini',
+        lead_capture_enabled: audience === 'public' ? 1 : 0,
+        allowed_origins: '*',
+        updated_at: new Date().toISOString(),
+      });
+      if (error) throw error;
       console.log(`[seed] Bot créé : ${name} (id=${id})`);
-    };
-    make(
+    }
+    await make(
       'Soluxa Public', 'public',
       'Bonjour ! Je suis l\'assistant Soluxa. Comment puis-je vous aider aujourd\'hui ?',
       'Les produits, services, offres et coordonnées de Soluxa.',
       'Désolé, je ne suis pas en mesure de répondre à cette question. Je peux vous aider sur les sujets liés à Soluxa.'
     );
-    make(
+    await make(
       'Soluxa Interne', 'internal',
       'Bonjour ! Je suis l\'assistant interne Soluxa. Que cherchez-vous ?',
       'Procédures internes, RH, documentation technique et organisationnelle de Soluxa.',
       'Cette question sort de mon périmètre. Réfère-toi à la documentation interne ou à un collaborateur compétent.'
     );
   } else {
-    console.log(`[seed] ${botCount} bot(s) déjà présent(s), pas de création.`);
+    console.log(`[seed] ${count} bot(s) déjà présent(s), pas de création.`);
   }
 
   console.log('[seed] Terminé.');
