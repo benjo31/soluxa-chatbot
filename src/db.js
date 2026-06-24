@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import WebSocket from 'ws';
 import fs from 'node:fs';
 import path from 'node:path';
 import { config } from './config.js';
@@ -9,6 +10,7 @@ fs.mkdirSync(config.uploadsPath, { recursive: true });
 // Supabase client (service_role = bypass RLS for backend)
 export const sb = createClient(config.supabaseUrl, config.supabaseKey, {
   auth: { persistSession: false },
+  realtime: { transport: WebSocket },
 });
 
 // Keep a backward-compatible db object so minimal code changes needed

@@ -26,7 +26,8 @@
     "nanoid": "^5.0.9",
     "openai": "^4.77.0",
     "pdf-parse": "^1.1.1",
-    "pg": "^8.22.0"
+    "pg": "^8.22.0",
+    "ws": "^8.21.0"
   },
   "optionalDependencies": {
     "tesseract.js": "^5.1.1"
