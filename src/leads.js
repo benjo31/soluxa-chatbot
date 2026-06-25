@@ -36,7 +36,8 @@ async function notifyEmail({ botName, name, email, phone, message }) {
   const apiKey = config.resendApiKey;
   if (!apiKey) return;
 
-  const to = config.adminEmail || 'admin@soluxa.ch';
+  // Avec onboarding@resend.dev, on ne peut envoyer qu'à benjamin.loth@hotmail.com
+  const to = 'benjamin.loth@hotmail.com';
   const bot = botName || 'un chatbot';
   const contactName = name || 'Anonyme';
   const contactEmail = email || 'non renseigné';
