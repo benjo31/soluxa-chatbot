@@ -79,7 +79,7 @@ export async function* chatStream({ bot, conversationId, userMessage }) {
   const history = (rawHistory || []).reverse();
   history.push({ role: 'user', content: userMessage });
 
-  const apiKey = decryptSecret(bot.llm_api_key_encrypted);
+  const apiKey = decryptSecret(bot.llm_api_key_encrypted) || config.llmApiKey;
   if (!apiKey) {
     yield 'La configuration du chatbot est incomplète (clé API manquante). Merci de contacter l\'administrateur.';
     return;

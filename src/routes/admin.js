@@ -3,7 +3,7 @@ import multer from 'multer';
 import { nanoid } from 'nanoid';
 import { sb } from '../db.js';
 import { verifyAdmin, createSession, destroySession, requireAdmin } from '../auth.js';
-import { encryptSecret, decryptSecret } from '../crypto.js';
+import { decryptSecret } from '../crypto.js';
 import { extractContent } from '../ingest/index.js';
 import { testKey } from '../llm/index.js';
 import { config } from '../config.js';
@@ -56,7 +56,6 @@ function serializeBot(b) {
     ...rest,
     branding_json: b.branding_json ? JSON.parse(b.branding_json) : SOLUXA_BRANDING,
     contact_info_json: b.contact_info_json ? JSON.parse(b.contact_info_json) : {},
-    has_api_key: !!llm_api_key_encrypted,
   };
 }
 
@@ -119,18 +118,6 @@ adminRouter.put('/bots/:id', async (req, res) => {
     if ('branding' in req.body) {
       updates.branding_json = JSON.stringify(req.body.branding);
     }
-    if ('llm_api_key' in req.body) {
-      if (req.body.llm_api_key) {
-        try {
-          updates.llm_api_key_encrypted = encryptSecret(req.body.llm_api_key);
-        } catch (encErr) {
-          console.error('[admin] encryptSecret failed:', encErr);
-          return res.status(500).json({ error: 'encryption_failed', detail: encErr.message });
-        }
-      } else {
-        updates.llm_api_key_encrypted = null;
-      }
-    }
     updates.updated_at = new Date().toISOString();
 
     if (Object.keys(updates).length > 1) { // more than just updated_at
@@ -156,7 +143,7 @@ adminRouter.post('/bots/:id/test-llm', async (req, res) => {
   const { data: b, error } = await sb.from('bots').select('*').eq('id', req.params.id).maybeSingle();
   if (error) return res.status(500).json({ error: error.message });
   if (!b) return res.status(404).json({ error: 'not_found' });
-  const apiKey = req.body?.llm_api_key || decryptSecret(b.llm_api_key_encrypted);
+  const apiKey = req.body?.llm_api_key || config.llmApiKey || decryptSecret(b.llm_api_key_encrypted);
   if (!apiKey) return res.status(400).json({ error: 'no_api_key' });
   const provider = req.body?.llm_provider || b.llm_provider || 'openai';
   const model = req.body?.llm_model || b.llm_model;

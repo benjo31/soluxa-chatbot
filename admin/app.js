@@ -156,7 +156,7 @@ function renderBotView() {
   const tabs = [
     ['general', 'Général'],
     ['branding', 'Branding'],
-    ['llm', 'IA / Clé API'],
+    ['llm', 'IA / Modèle'],
     ['documents', 'Documents'],
     ['contact', 'Contact'],
     ['embed', 'Intégration'],
@@ -369,6 +369,11 @@ function renderLlm(c) {
   const b = state.current;
   const card = el('div', { class: 'card' });
 
+  card.appendChild(el('p', { class: 'muted' },
+    'La clé API OpenAI est définie via la variable d\'environnement LLM_API_KEY sur Render. ' +
+    'Aucune configuration de clé n\'est nécessaire ici.'
+  ));
+
   const providerSelect = el('select', {},
     el('option', { value: 'openai' }, 'OpenAI'),
     el('option', { value: 'anthropic' }, 'Anthropic (Claude)')
@@ -380,79 +385,15 @@ function renderLlm(c) {
     modelInput.value = providerSelect.value === 'anthropic' ? 'claude-haiku-4-5' : 'gpt-4o-mini';
   });
 
-  // Key status indicator
-  const keyStatus = el('span', {
-    style: { fontSize: '13px', fontWeight: 600, marginLeft: '8px' }
-  });
-  function updateKeyStatus() {
-    keyStatus.textContent = '';
-    keyStatus.style.color = '';
-    if (apiKeyInput.value) {
-      // User is typing a new key
-      keyStatus.textContent = '🔑 Nouvelle clé (non sauvegardée)';
-      keyStatus.style.color = '#d23f3f';
-    } else if (b.has_api_key) {
-      keyStatus.textContent = '✅ Clé enregistrée';
-      keyStatus.style.color = '#62a70f';
-    } else {
-      keyStatus.textContent = '⚠️ Aucune clé configurée';
-      keyStatus.style.color = '#d23f3f';
-    }
-  }
-
-  const apiKeyInput = el('input', {
-    type: 'password',
-    placeholder: b.has_api_key ? '•••••••• (laisser vide pour garder l\'existante)' : 'sk-… ou sk-ant-…'
-  });
-  apiKeyInput.addEventListener('input', updateKeyStatus);
-  const testBtn = el('button', { class: 'btn-secondary' }, 'Tester la clé');
-  const testRes = el('span', { class: 'muted', style: { marginLeft: '10px' } });
-
-  testBtn.addEventListener('click', async () => {
-    testBtn.disabled = true; testRes.textContent = 'Test en cours…';
-    try {
-      const r = await api(`/api/admin/bots/${b.id}/test-llm`, {
-        method: 'POST',
-        body: JSON.stringify({
-          llm_provider: providerSelect.value, llm_model: modelInput.value,
-          llm_api_key: apiKeyInput.value || undefined,
-        }),
-      });
-      testRes.textContent = r.ok ? '✅ Connexion réussie' : '❌ Échec';
-      testRes.style.color = r.ok ? '#62a70f' : '#d23f3f';
-    } catch (e) {
-      testRes.textContent = '❌ ' + e.message;
-      testRes.style.color = '#d23f3f';
-    } finally { testBtn.disabled = false; }
-  });
-
   card.appendChild(el('div', { class: 'form-grid' },
     el('div', { class: 'field' }, el('label', {}, 'Fournisseur'), providerSelect),
-    el('div', { class: 'field' }, el('label', {}, 'Modèle'), modelInput),
-    el('div', { class: 'field full' },
-      el('label', {}, 'Clé API'),
-      el('small', {}, 'Stockée chiffrée (AES-256-GCM). Jamais renvoyée au navigateur.'),
-      el('div', { style: { display: 'flex', alignItems: 'center' } }, apiKeyInput, keyStatus)
-    ),
-    el('div', { class: 'field full', style: { display: 'flex', alignItems: 'center' } }, testBtn, testRes)
+    el('div', { class: 'field' }, el('label', {}, 'Modèle'), modelInput)
   ));
   card.appendChild(el('div', { style: { marginTop: '16px' } },
-    el('button', { class: 'btn-primary', onclick: () => {
-      const patch = { llm_provider: providerSelect.value, llm_model: modelInput.value };
-      if (apiKeyInput.value) patch.llm_api_key = apiKeyInput.value;
-      // Don't clear field on save — let user see what happened
-      saveBot(patch).then(() => {
-        b.has_api_key = !!patch.llm_api_key || b.has_api_key;
-        apiKeyInput.value = '';
-        apiKeyInput.placeholder = '•••••••• (laisser vide pour garder l\'existante)';
-        updateKeyStatus();
-        toast('Clé API sauvegardée');
-      });
-    } }, 'Enregistrer')
+    el('button', { class: 'btn-primary', onclick: () => saveBot({
+      llm_provider: providerSelect.value, llm_model: modelInput.value,
+    }) }, 'Enregistrer')
   ));
-
-  // Initial status
-  updateKeyStatus();
 
   c.appendChild(card);
 }
@@ -690,13 +631,6 @@ async function showConversation(convId) {
 // ------------- TAB: Test Chat -------------
 function renderTest(c) {
   const b = state.current;
-  if (!b.has_api_key) {
-    c.appendChild(el('div', { class: 'card' },
-      el('p', {}, '⚠️ Configure d\'abord une clé API dans l\'onglet "IA / Clé API" pour pouvoir tester le chatbot.')
-    ));
-    return;
-  }
-
   const card = el('div', { class: 'card' });
   card.appendChild(el('h2', {}, 'Test : discuter avec le chatbot'));
   card.appendChild(el('p', { class: 'muted' }, 'Pose une question pour tester la configuration, le scope et la base de connaissance.'));

@@ -38,4 +38,7 @@ export const config = {
   enableOcr: process.env.ENABLE_OCR === '1',
   maxKnowledgeChars: 80000,
   conversationWindow: 12,
+
+  // LLM — variable d'environnement (Render) plutôt que stockée par bot
+  llmApiKey: process.env.LLM_API_KEY || null,
 };
