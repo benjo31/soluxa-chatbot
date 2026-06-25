@@ -98,37 +98,51 @@ adminRouter.get('/bots/:id', async (req, res) => {
 });
 
 adminRouter.put('/bots/:id', async (req, res) => {
-  const { data: existing, error: findErr } = await sb.from('bots').select('id, llm_api_key_encrypted').eq('id', req.params.id).maybeSingle();
-  if (findErr) return res.status(500).json({ error: findErr.message });
-  if (!existing) return res.status(404).json({ error: 'not_found' });
+  try {
+    const { data: existing, error: findErr } = await sb.from('bots').select('id, llm_api_key_encrypted').eq('id', req.params.id).maybeSingle();
+    if (findErr) return res.status(500).json({ error: findErr.message });
+    if (!existing) return res.status(404).json({ error: 'not_found' });
 
-  const allowed = [
-    'name', 'audience', 'system_prompt', 'scope_topics', 'refusal_message',
-    'welcome_message', 'llm_provider', 'llm_model', 'lead_capture_enabled', 'allowed_origins',
-  ];
-  const updates = {};
-  for (const k of allowed) {
-    if (k in req.body) {
-      updates[k] = typeof req.body[k] === 'boolean' ? (req.body[k] ? 1 : 0) : req.body[k];
+    const allowed = [
+      'name', 'audience', 'system_prompt', 'scope_topics', 'refusal_message',
+      'welcome_message', 'llm_provider', 'llm_model', 'lead_capture_enabled', 'allowed_origins',
+    ];
+    const updates = {};
+    for (const k of allowed) {
+      if (k in req.body) {
+        updates[k] = typeof req.body[k] === 'boolean' ? (req.body[k] ? 1 : 0) : req.body[k];
+      }
     }
-  }
-  if ('contact_info' in req.body) {
-    updates.contact_info_json = JSON.stringify(req.body.contact_info);
-  }
-  if ('branding' in req.body) {
-    updates.branding_json = JSON.stringify(req.body.branding);
-  }
-  if ('llm_api_key' in req.body && req.body.llm_api_key) {
-    updates.llm_api_key_encrypted = encryptSecret(req.body.llm_api_key);
-  }
-  updates.updated_at = new Date().toISOString();
+    if ('contact_info' in req.body) {
+      updates.contact_info_json = JSON.stringify(req.body.contact_info);
+    }
+    if ('branding' in req.body) {
+      updates.branding_json = JSON.stringify(req.body.branding);
+    }
+    if ('llm_api_key' in req.body) {
+      if (req.body.llm_api_key) {
+        try {
+          updates.llm_api_key_encrypted = encryptSecret(req.body.llm_api_key);
+        } catch (encErr) {
+          console.error('[admin] encryptSecret failed:', encErr);
+          return res.status(500).json({ error: 'encryption_failed', detail: encErr.message });
+        }
+      } else {
+        updates.llm_api_key_encrypted = null;
+      }
+    }
+    updates.updated_at = new Date().toISOString();
 
-  if (Object.keys(updates).length > 1) { // more than just updated_at
-    const { error: updErr } = await sb.from('bots').update(updates).eq('id', req.params.id);
-    if (updErr) return res.status(500).json({ error: updErr.message });
+    if (Object.keys(updates).length > 1) { // more than just updated_at
+      const { error: updErr } = await sb.from('bots').update(updates).eq('id', req.params.id);
+      if (updErr) return res.status(500).json({ error: updErr.message });
+    }
+    const { data: updated } = await sb.from('bots').select('*').eq('id', req.params.id).maybeSingle();
+    res.json(serializeBot(updated));
+  } catch (e) {
+    console.error('[admin] PUT /bots/:id unhandled error:', e);
+    res.status(500).json({ error: 'internal_error', detail: e?.message || e });
   }
-  const { data: updated } = await sb.from('bots').select('*').eq('id', req.params.id).maybeSingle();
-  res.json(serializeBot(updated));
 });
 
 adminRouter.delete('/bots/:id', async (req, res) => {

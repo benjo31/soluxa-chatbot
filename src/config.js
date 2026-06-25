@@ -22,7 +22,16 @@ export const config = {
   // Local data dir (for uploads only now)
   databasePath: path.resolve(root, process.env.DATABASE_PATH || './data/soluxa.db'),
   uploadsPath: path.resolve(root, process.env.UPLOADS_PATH || './data/uploads'),
-  masterKey: required('MASTER_KEY'),
+  masterKey: (() => {
+    const v = required('MASTER_KEY');
+    // Validate: must be 64 hex chars (32 bytes)
+    if (!/^[0-9a-fA-F]{64}$/.test(v)) {
+      console.error('[config] MASTER_KEY is not a valid 64-char hex string.');
+      console.error('[config] Generate a proper key: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
+      process.exit(1);
+    }
+    return v;
+  })(),
   sessionSecret: required('SESSION_SECRET'),
   adminEmail: process.env.ADMIN_EMAIL || 'admin@soluxa.ch',
   adminPassword: process.env.ADMIN_PASSWORD || 'changeme',

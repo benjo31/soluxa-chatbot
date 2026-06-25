@@ -34,6 +34,12 @@ app.get('/', (req, res) => res.redirect('/admin/'));
 // 404
 app.use((req, res) => res.status(404).json({ error: 'not_found' }));
 
+// Global error handler — prevents process crash from unhandled async rejections
+app.use((err, req, res, _next) => {
+  console.error('[server] Unhandled error:', err?.stack || err?.message || err);
+  res.status(500).json({ error: 'internal_server_error' });
+});
+
 app.listen(config.port, () => {
   console.log(`[Soluxa Chatbot] Serveur démarré sur http://localhost:${config.port}`);
   console.log(`[Soluxa Chatbot] Admin: http://localhost:${config.port}/admin/`);
