@@ -32,6 +32,8 @@ export async function createLead({ botId, conversationId, name, email, phone, me
   return data.id;
 }
 
+const ADMIN_URL = 'https://soluxa-chatbot.onrender.com';
+
 /**
  * Envoie une notification email via Resend.
  * Exportée pour être utilisée aussi depuis les routes (conversation, etc.)
@@ -41,6 +43,7 @@ export async function sendNotification({ botName, type, details }) {
   if (!apiKey) return;
 
   // Avec onboarding@resend.dev, on ne peut envoyer qu'à benjamin.loth@hotmail.com
+  // Une fois soluxa.ch vérifié sur Resend, communication@soluxa.ch fonctionnera aussi
   const to = 'benjamin.loth@hotmail.com';
   const bot = botName || 'un chatbot';
 
@@ -59,6 +62,7 @@ export async function sendNotification({ botName, type, details }) {
         <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold">Téléphone</td><td style="padding:8px;border:1px solid #ddd">${contactPhone}</td></tr>
         <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold">Message</td><td style="padding:8px;border:1px solid #ddd">${msg}</td></tr>
       </table>
+      <p><a href="${ADMIN_URL}">Accéder à la console d'administration</a></p>
       <p style="color:#888;font-size:12px">Envoyé automatiquement par Soluxa Chatbots</p>
     `;
   } else if (type === 'conversation') {
@@ -67,6 +71,7 @@ export async function sendNotification({ botName, type, details }) {
       <h2>Nouvelle conversation démarrée</h2>
       <p>Un visiteur a démarré une conversation avec <strong>${bot}</strong>.</p>
       ${details?.visitorId ? `<p>Visiteur ID: <code>${details.visitorId}</code></p>` : ''}
+      <p><a href="${ADMIN_URL}">Accéder à la console d'administration</a></p>
       <p style="color:#888;font-size:12px">Envoyé automatiquement par Soluxa Chatbots</p>
     `;
   } else {
