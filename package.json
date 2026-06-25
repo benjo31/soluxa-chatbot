@@ -5,7 +5,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "start": "node db/seed.js && node server.js",
+    "start": "node server.js",
     "dev": "node --watch server.js",
     "seed": "node db/seed.js"
   },

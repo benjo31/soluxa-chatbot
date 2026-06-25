@@ -32,8 +32,12 @@ async function main() {
     console.log(`[seed] Admin déjà existant : ${config.adminEmail}`);
   }
 
-  // 2 bots de démo si aucun bot
-  const { count: botCount } = await sb.from('bots').select('id', { count: 'exact', head: true }).single();
+  // 2 bots de démo si aucun bot existant
+  const { count: botCount, error: countErr } = await sb.from('bots').select('*', { count: 'exact', head: true });
+  if (countErr) {
+    console.error('[seed] Erreur count bots:', countErr.message);
+    return; // Ne pas créer de bots si on ne peut pas vérifier l'existant
+  }
   if (!botCount || botCount === 0) {
     async function make(name, audience, welcome, scope, refusal) {
       const id = nanoid(12);
