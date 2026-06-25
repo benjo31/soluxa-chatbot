@@ -256,10 +256,33 @@
     let visitorId = state.visitorId || null;
     let leadSubmitted = false;
 
-    // Welcome
-    if (config.welcome) {
-      body.appendChild(h('div', { class: 'sx-msg sx-msg-bot' }, config.welcome));
+    // -------- Load conversation history --------
+    async function loadHistory() {
+      if (!conversationId) return false;
+      try {
+        const r = await fetch(`${baseUrl}/api/public/bots/${botId}/conversations/${conversationId}/messages`);
+        if (!r.ok) throw new Error('history_fetch_failed');
+        const data = await r.json();
+        if (data.messages && data.messages.length > 0) {
+          for (const msg of data.messages) {
+            const cls = msg.role === 'user' ? 'sx-msg-user' : 'sx-msg-bot';
+            body.appendChild(h('div', { class: `sx-msg ${cls}` }, msg.content));
+          }
+          body.scrollTop = body.scrollHeight;
+          return true;
+        }
+      } catch (e) {
+        console.warn('[Soluxa Chatbot] Impossible de charger l\'historique:', e);
+      }
+      return false;
     }
+
+    // Welcome message (skip if history already loaded)
+    loadHistory().then((hasHistory) => {
+      if (!hasHistory && config.welcome) {
+        body.appendChild(h('div', { class: 'sx-msg sx-msg-bot' }, config.welcome));
+      }
+    });
 
     // -------- Behaviors --------
     const openPanel = () => { panel.classList.add('sx-open'); launcher.style.display = 'none'; setTimeout(() => input.focus(), 100); };

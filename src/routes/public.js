@@ -104,6 +104,37 @@ publicRouter.post('/bots/:id/chat', async (req, res) => {
   res.end();
 });
 
+// Récupération des messages d'une conversation
+publicRouter.get('/bots/:id/conversations/:convId/messages', async (req, res) => {
+  const bot = await getBot(req.params.id);
+  if (!bot) return res.status(404).json({ error: 'not_found' });
+  applyCors(req, res, bot);
+
+  const { convId } = req.params;
+
+  // Vérifier que la conversation appartient bien à ce bot
+  const { data: conv, error: convErr } = await sb
+    .from('conversations')
+    .select('id')
+    .eq('id', convId)
+    .eq('bot_id', bot.id)
+    .maybeSingle();
+  if (convErr || !conv) return res.status(404).json({ error: 'conversation_not_found' });
+
+  const { data: messages, error: msgErr } = await sb
+    .from('messages')
+    .select('role, content, created_at')
+    .eq('conversation_id', convId)
+    .order('id', { ascending: true });
+
+  if (msgErr) {
+    console.error('[public/messages] error', msgErr);
+    return res.status(500).json({ error: 'failed' });
+  }
+
+  res.json({ messages: messages || [] });
+});
+
 // Création de lead
 publicRouter.post('/bots/:id/lead', async (req, res) => {
   const bot = await getBot(req.params.id);
