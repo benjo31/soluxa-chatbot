@@ -593,8 +593,8 @@ async function renderConversations(c) {
       el('th', {}, 'Messages'), el('th', {}, 'Visiteur'), el('th', {}, '')
     )),
     el('tbody', {}, ...convs.map((cv) => el('tr', {},
-      el('td', {}, new Date(cv.started_at + 'Z').toLocaleString()),
-      el('td', {}, cv.last_message_at ? new Date(cv.last_message_at + 'Z').toLocaleString() : '—'),
+      el('td', {}, cv.started_at ? new Date(cv.started_at).toLocaleString() : '—'),
+      el('td', {}, cv.last_message_at ? new Date(cv.last_message_at).toLocaleString() : '—'),
       el('td', {}, String(cv.msg_count)),
       el('td', {}, (cv.visitor_id || '').slice(0, 8)),
       el('td', {}, el('button', { class: 'btn-secondary', onclick: () => showConversation(cv.id) }, 'Voir'))
