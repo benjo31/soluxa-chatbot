@@ -561,7 +561,7 @@ async function renderLeads(c) {
         toast('Statut mis à jour');
       });
       return el('tr', {},
-        el('td', {}, new Date(r.created_at + 'Z').toLocaleString()),
+        el('td', {}, r.created_at ? new Date(r.created_at).toLocaleString() : '—'),
         el('td', {}, r.name || '—'),
         el('td', {}, r.email || '—'),
         el('td', {}, r.phone || '—'),
