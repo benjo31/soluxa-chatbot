@@ -61,7 +61,7 @@ async function notifyEmail({ botName, name, email, phone, message }) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: 'Soluxa Chatbots <notifications@soluxa.ch>',
+      from: 'Soluxa Chatbots <onboarding@resend.dev>',
       to,
       subject: `📩 Nouveau lead - ${bot}`,
       html,
