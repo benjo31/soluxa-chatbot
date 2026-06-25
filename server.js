@@ -7,6 +7,16 @@ import './src/db.js'; // init DB
 import { publicRouter } from './src/routes/public.js';
 import { adminRouter } from './src/routes/admin.js';
 
+// ---- Process-level crash prevention ----
+// Node 20+ exits the process on unhandled rejections by default.
+// These handlers ensure Render's proxy never sees a 502 from a crashed process.
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[process] UNHANDLED REJECTION:', reason?.stack || reason?.message || reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[process] UNCAUGHT EXCEPTION:', err?.stack || err?.message || err);
+});
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
