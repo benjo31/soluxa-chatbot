@@ -32,4 +32,7 @@ export const config = {
 
   // LLM — variable d'environnement (Render) plutôt que stockée par bot
   llmApiKey: process.env.LLM_API_KEY || null,
+
+  // Resend — notification email des leads
+  resendApiKey: process.env.RESEND_API_KEY || null,
 };

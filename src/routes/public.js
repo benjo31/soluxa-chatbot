@@ -147,6 +147,7 @@ publicRouter.post('/bots/:id/lead', async (req, res) => {
   const leadId = await createLead({
     botId: bot.id, conversationId,
     name, email, phone, message,
+    botName: bot.name,
   });
   res.json({ ok: true, id: leadId });
 });
