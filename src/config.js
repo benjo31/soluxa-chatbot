@@ -23,7 +23,7 @@ export const config = {
   databasePath: path.resolve(root, process.env.DATABASE_PATH || './data/soluxa.db'),
   uploadsPath: path.resolve(root, process.env.UPLOADS_PATH || './data/uploads'),
   masterKey: process.env.MASTER_KEY || null,
-  sessionSecret: required('SESSION_SECRET'),
+  sessionSecret: process.env.SESSION_SECRET || null,
   adminEmail: process.env.ADMIN_EMAIL || 'admin@soluxa.ch',
   adminPassword: process.env.ADMIN_PASSWORD || 'changeme',
   enableOcr: process.env.ENABLE_OCR === '1',
