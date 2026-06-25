@@ -24,15 +24,71 @@ export async function createLead({ botId, conversationId, name, email, phone, me
   }).select().maybeSingle();
   if (error) throw error;
 
-  // Envoyer notification email (non bloquant)
-  notifyEmail({ botName, name, email, phone, message }).catch((e) => {
+// Envoyer notification email (non bloquant)
+  notifyNewLead({ botName, name, email, phone, message }).catch((e) => {
     console.error('[leads] notifyEmail error:', e?.message || e);
   });
 
   return data.id;
 }
 
-async function notifyEmail({ botName, name, email, phone, message }) {
+/**
+ * Envoie une notification email via Resend.
+ * Exportée pour être utilisée aussi depuis les routes (conversation, etc.)
+ */
+export async function sendNotification({ botName, type, details }) {
+  const apiKey = config.resendApiKey;
+  if (!apiKey) return;
+
+  // Avec onboarding@resend.dev, on ne peut envoyer qu'à benjamin.loth@hotmail.com
+  const to = 'benjamin.loth@hotmail.com';
+  const bot = botName || 'un chatbot';
+
+  let subject, html;
+  if (type === 'lead') {
+    subject = `📩 Nouveau lead - ${bot}`;
+    const contactName = details?.name || 'Anonyme';
+    const contactEmail = details?.email || 'non renseigné';
+    const contactPhone = details?.phone || 'non renseigné';
+    const msg = details?.message || 'pas de message';
+    html = `
+      <h2>Nouveau contact depuis ${bot}</h2>
+      <table style="border-collapse:collapse;width:100%;max-width:500px">
+        <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold">Nom</td><td style="padding:8px;border:1px solid #ddd">${contactName}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold">Email</td><td style="padding:8px;border:1px solid #ddd">${contactEmail}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold">Téléphone</td><td style="padding:8px;border:1px solid #ddd">${contactPhone}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold">Message</td><td style="padding:8px;border:1px solid #ddd">${msg}</td></tr>
+      </table>
+      <p style="color:#888;font-size:12px">Envoyé automatiquement par Soluxa Chatbots</p>
+    `;
+  } else if (type === 'conversation') {
+    subject = `💬 Nouvelle conversation - ${bot}`;
+    html = `
+      <h2>Nouvelle conversation démarrée</h2>
+      <p>Un visiteur a démarré une conversation avec <strong>${bot}</strong>.</p>
+      ${details?.visitorId ? `<p>Visiteur ID: <code>${details.visitorId}</code></p>` : ''}
+      <p style="color:#888;font-size:12px">Envoyé automatiquement par Soluxa Chatbots</p>
+    `;
+  } else {
+    return; // type inconnu
+  }
+
+  await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: 'Soluxa Chatbots <onboarding@resend.dev>',
+      to,
+      subject,
+      html,
+    }),
+  });
+}
+
+async function notifyNewLead({ botName, name, email, phone, message }) {
   const apiKey = config.resendApiKey;
   if (!apiKey) return;
 

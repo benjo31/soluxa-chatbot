@@ -2,7 +2,7 @@ import express from 'express';
 import { nanoid } from 'nanoid';
 import { sb } from '../db.js';
 import { getBot, chatStream, persistMessages } from '../chat.js';
-import { detectLeadIntent, createLead } from '../leads.js';
+import { detectLeadIntent, createLead, sendNotification } from '../leads.js';
 
 export const publicRouter = express.Router();
 
@@ -53,6 +53,16 @@ publicRouter.post('/bots/:id/conversation', async (req, res) => {
     console.error('[public/conversation] error', error);
     return res.status(500).json({ error: 'failed' });
   }
+
+  // Notification pour les bots publics
+  if (bot.audience === 'public') {
+    sendNotification({
+      botName: bot.name,
+      type: 'conversation',
+      details: { visitorId },
+    }).catch((e) => console.error('[public] notif error:', e?.message || e));
+  }
+
   res.json({ conversationId: id, visitorId });
 });
 
