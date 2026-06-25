@@ -380,7 +380,31 @@ function renderLlm(c) {
     modelInput.value = providerSelect.value === 'anthropic' ? 'claude-haiku-4-5' : 'gpt-4o-mini';
   });
 
-  const apiKeyInput = el('input', { type: 'password', placeholder: b.has_api_key ? '•••••••• (clé déjà enregistrée — saisir pour remplacer)' : 'sk-… ou sk-ant-…' });
+  // Key status indicator
+  const keyStatus = el('span', {
+    style: { fontSize: '13px', fontWeight: 600, marginLeft: '8px' }
+  });
+  function updateKeyStatus() {
+    keyStatus.textContent = '';
+    keyStatus.style.color = '';
+    if (apiKeyInput.value) {
+      // User is typing a new key
+      keyStatus.textContent = '🔑 Nouvelle clé (non sauvegardée)';
+      keyStatus.style.color = '#d23f3f';
+    } else if (b.has_api_key) {
+      keyStatus.textContent = '✅ Clé enregistrée';
+      keyStatus.style.color = '#62a70f';
+    } else {
+      keyStatus.textContent = '⚠️ Aucune clé configurée';
+      keyStatus.style.color = '#d23f3f';
+    }
+  }
+
+  const apiKeyInput = el('input', {
+    type: 'password',
+    placeholder: b.has_api_key ? '•••••••• (laisser vide pour garder l\'existante)' : 'sk-… ou sk-ant-…'
+  });
+  apiKeyInput.addEventListener('input', updateKeyStatus);
   const testBtn = el('button', { class: 'btn-secondary' }, 'Tester la clé');
   const testRes = el('span', { class: 'muted', style: { marginLeft: '10px' } });
 
@@ -408,7 +432,7 @@ function renderLlm(c) {
     el('div', { class: 'field full' },
       el('label', {}, 'Clé API'),
       el('small', {}, 'Stockée chiffrée (AES-256-GCM). Jamais renvoyée au navigateur.'),
-      apiKeyInput
+      el('div', { style: { display: 'flex', alignItems: 'center' } }, apiKeyInput, keyStatus)
     ),
     el('div', { class: 'field full', style: { display: 'flex', alignItems: 'center' } }, testBtn, testRes)
   ));
@@ -416,9 +440,20 @@ function renderLlm(c) {
     el('button', { class: 'btn-primary', onclick: () => {
       const patch = { llm_provider: providerSelect.value, llm_model: modelInput.value };
       if (apiKeyInput.value) patch.llm_api_key = apiKeyInput.value;
-      saveBot(patch).then(() => { apiKeyInput.value = ''; });
+      // Don't clear field on save — let user see what happened
+      saveBot(patch).then(() => {
+        b.has_api_key = !!patch.llm_api_key || b.has_api_key;
+        apiKeyInput.value = '';
+        apiKeyInput.placeholder = '•••••••• (laisser vide pour garder l\'existante)';
+        updateKeyStatus();
+        toast('Clé API sauvegardée');
+      });
     } }, 'Enregistrer')
   ));
+
+  // Initial status
+  updateKeyStatus();
+
   c.appendChild(card);
 }
 
