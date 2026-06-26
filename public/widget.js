@@ -344,13 +344,25 @@
     let avatarOverlay = null;
     let avatarSession = null; // LiveAvatarSession instance
     let avatarReady = false;
+    let avatarSpeaking = false;
+
+    // Avatar DOM elements (created inside if(heygenEnabled))
+    let avVideo = null;
+    let avStatus = null;
+    let avInput = null;
+    let avSend = null;
+    let avBack = null;
+
+    function avatarStatus(msg) {
+      if (avStatus) avStatus.textContent = msg;
+    }
 
     if (heygenEnabled) {
-      const avVideo = h('video', { autoplay: true, muted: true, playsinline: true });
-      const avStatus = h('div', { class: 'sx-av-status' }, 'Appuyez sur Entrée pour parler à Lumia');
-      const avInput = h('input', { class: 'sx-av-input', type: 'text', placeholder: 'Écrivez votre message…', autocomplete: 'off' });
-      const avSend = h('button', { class: 'sx-av-send' }, 'Envoyer');
-      const avBack = h('button', { class: 'sx-av-back' }, '←  Chat');
+      avVideo = h('video', { autoplay: true, muted: true, playsinline: true });
+      avStatus = h('div', { class: 'sx-av-status' }, 'Appuyez sur Entrée pour parler à Lumia');
+      avInput = h('input', { class: 'sx-av-input', type: 'text', placeholder: 'Écrivez votre message…', autocomplete: 'off' });
+      avSend = h('button', { class: 'sx-av-send' }, 'Envoyer');
+      avBack = h('button', { class: 'sx-av-back' }, '←  Chat');
       const avFooter = h('div', { class: 'sx-av-footer' },
         h('div', { class: 'sx-av-input-row' }, avInput, avSend)
       );
@@ -365,59 +377,6 @@
         avFooter
       );
 
-      // Avatar send logic — gets LLM reply, then sends to avatar SDK
-      async function avatarSend(text) {
-        if (!text.trim() || !avatarReady || !avatarSession) return;
-        avInput.value = '';
-        avSend.disabled = true;
-        avatarStatus('🧠 Réflexion…');
-        try {
-          await ensureConversation();
-
-          // Get LLM reply as plain JSON (no SSE)
-          const resp = await fetch(`${baseUrl}/api/public/bots/${botId}/heygen/chat`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ conversationId, message: text }),
-          });
-          if (!resp.ok) {
-            const errBody = await resp.json().catch(() => ({}));
-            // If session expired, the client can re-init
-            if (resp.status === 400 && errBody.action === 'restart') {
-              avatarStatus('⚠ Session expirée, rechargez l\'avatar');
-              return;
-            }
-            throw new Error(errBody.error || 'chat_failed');
-          }
-          const data = await resp.json();
-          const reply = data.reply || '';
-
-          if (reply.trim()) {
-            avatarStatus('🎙 Lumia parle…');
-            // Send the text to the avatar SDK via the message() method
-            avatarSession.message(reply);
-          } else {
-            avatarStatus('✔ Pas de réponse');
-          }
-        } catch (e) {
-          console.error('[avatar] send error:', e);
-          avatarStatus('⚠ Erreur, réessayez');
-        } finally {
-          avatarSpeaking = false;
-          avSend.disabled = false;
-          setTimeout(() => {
-            if (!avatarSpeaking && avatarReady) avatarStatus('Appuyez sur Entrée pour parler à Lumia');
-          }, 1500);
-        }
-      }
-
-      // Track whether avatar is currently speaking (for status display)
-      let avatarSpeaking = false;
-
-      function avatarStatus(msg) {
-        avStatus.textContent = msg;
-      }
-
       avBack.addEventListener('click', closeAvatarMode);
       avSend.addEventListener('click', () => avatarSend(avInput.value));
       avInput.addEventListener('keydown', (e) => {
@@ -425,10 +384,76 @@
       });
     }
 
+    // Avatar send logic — gets LLM reply, then sends to avatar SDK
+    async function avatarSend(text) {
+      if (!text.trim() || !avatarReady || !avatarSession) return;
+      if (!avInput) return;
+      avInput.value = '';
+      if (avSend) avSend.disabled = true;
+      avatarStatus('🧠 Réflexion…');
+      try {
+        await ensureConversation();
+
+        // Get LLM reply as plain JSON (no SSE)
+        const resp = await fetch(`${baseUrl}/api/public/bots/${botId}/heygen/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversationId, message: text }),
+        });
+        if (!resp.ok) {
+          const errBody = await resp.json().catch(() => ({}));
+          // If session expired, the client can re-init
+          if (resp.status === 400 && errBody.action === 'restart') {
+            avatarStatus('⚠ Session expirée, rechargez l\'avatar');
+            return;
+          }
+          throw new Error(errBody.error || 'chat_failed');
+        }
+        const data = await resp.json();
+        const reply = data.reply || '';
+
+        if (reply.trim()) {
+          avatarStatus('🎙 Lumia parle…');
+          // Send the text to the avatar SDK via the message() method
+          avatarSession.message(reply);
+        } else {
+          avatarStatus('✔ Pas de réponse');
+        }
+      } catch (e) {
+        console.error('[avatar] send error:', e);
+        avatarStatus('⚠ Erreur, réessayez');
+      } finally {
+        avatarSpeaking = false;
+        if (avSend) avSend.disabled = false;
+        setTimeout(() => {
+          if (!avatarSpeaking && avatarReady) avatarStatus('Appuyez sur Entrée pour parler à Lumia');
+        }, 1500);
+      }
+    }
+
+    function closeAvatarMode() {
+      if (!avatarOverlay) return;
+      avatarOverlay.classList.remove('sx-open');
+      if (avatarBtn) avatarBtn.classList.remove('sx-active');
+      avatarReady = false;
+      if (avatarSession) {
+        try {
+          avatarSession.stop().catch(() => {});
+        } catch (e) {
+          // Ignore errors on stop
+        }
+        avatarSession = null;
+      }
+      fetch(`${baseUrl}/api/public/bots/${botId}/heygen/stop`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+      }).catch(() => {});
+      setTimeout(() => input.focus(), 100);
+    }
+
     function openAvatarMode() {
       if (!avatarOverlay) return;
       avatarOverlay.classList.add('sx-open');
-      avatarBtn.classList.add('sx-active');
+      if (avatarBtn) avatarBtn.classList.add('sx-active');
       const avInputEl = avatarOverlay.querySelector('.sx-av-input');
       setTimeout(() => avInputEl?.focus(), 100);
       avatarStatus('🚀 Connexion…');
@@ -508,25 +533,6 @@
         console.error('[avatar] init error:', err, 'message:', err.message, 'stack:', err.stack);
         avatarStatus('⚠ ' + (err.message || 'Erreur initialisation'));
       });
-    }
-
-    function closeAvatarMode() {
-      if (!avatarOverlay) return;
-      avatarOverlay.classList.remove('sx-open');
-      avatarBtn.classList.remove('sx-active');
-      avatarReady = false;
-      if (avatarSession) {
-        try {
-          avatarSession.stop().catch(() => {});
-        } catch (e) {
-          // Ignore errors on stop
-        }
-        avatarSession = null;
-      }
-      fetch(`${baseUrl}/api/public/bots/${botId}/heygen/stop`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-      }).catch(() => {});
-      setTimeout(() => input.focus(), 100);
     }
 
     // Load the HeyGen LiveAvatar SDK UMD bundle dynamically
