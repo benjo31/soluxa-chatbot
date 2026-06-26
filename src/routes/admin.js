@@ -189,22 +189,22 @@ adminRouter.post('/bots/:id/heygen/avatars', async (req, res) => {
   if (!apiKey) return res.status(400).json({ error: 'api_key_required' });
   
   try {
-    // Try user avatars first, fallback to public
-    const avatars = await listAvatars(apiKey);
-    if (avatars.length === 0) {
-      const publicAvatars = await listPublicAvatars(apiKey);
-      res.json({ userAvatars: [], publicAvatars, source: 'public' });
-    } else {
-      res.json({ userAvatars: avatars, publicAvatars: [], source: 'user' });
-    }
-  } catch (e) {
-    // Fallback to public avatars
+    // Use public avatars from LiveAvatar (the most common case)
+    const publicAvatars = await listPublicAvatars(apiKey);
+    // Also try user avatars
+    let userAvatars = [];
     try {
-      const publicAvatars = await listPublicAvatars(apiKey);
-      res.json({ userAvatars: [], publicAvatars, source: 'public' });
-    } catch (e2) {
-      res.status(400).json({ error: e2.message });
-    }
+      userAvatars = await listAvatars(apiKey);
+    } catch (_) { /* no user avatars, that's fine */ }
+    
+    // Return flat array, merging both, with user avatars first
+    const merged = [
+      ...userAvatars.map(a => ({ ...a, isUserAvatar: true })),
+      ...publicAvatars.map(a => ({ ...a, isUserAvatar: false })),
+    ];
+    res.json(merged);
+  } catch (e) {
+    res.status(400).json({ error: e.message });
   }
 });
 
