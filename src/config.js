@@ -35,4 +35,8 @@ export const config = {
 
   // Resend — notification email des leads
   resendApiKey: process.env.RESEND_API_KEY || null,
+
+  // LiveAvatar — API key par défaut (fallback)
+  liveavatarApiKey: process.env.LIVEAVATAR_API_KEY || null,
+  liveavatarAvatarId: process.env.LIVEAVATAR_AVATAR_ID || null,
 };

@@ -468,10 +468,15 @@
         });
       }).then(r => {
         console.log('[avatar] token response status:', r.status);
-        if (!r.ok) {
-          return r.json().then(body => { throw new Error('HTTP ' + r.status + ': ' + (body.error || body.detail || JSON.stringify(body))); });
-        }
-        return r.json();
+        return r.text().then(text => {
+          console.log('[avatar] token response body:', text);
+          if (!r.ok) {
+            let detail;
+            try { const j = JSON.parse(text); detail = j.error || j.detail || JSON.stringify(j); } catch(e) { detail = text; }
+            throw new Error('HTTP ' + r.status + ': ' + detail);
+          }
+          return JSON.parse(text);
+        });
       }).then(data => {
         console.log('[avatar] token data:', JSON.stringify(data));
         const token = data.session_token || data.token;

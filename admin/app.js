@@ -907,7 +907,10 @@ function renderHeyGen(c) {
           // La clé est stockée sur le serveur, pas dans branding
         }
 
+        // Fusionner avec les valeurs existantes pour ne pas perdre apiKeyEncrypted
+        const existingHeygen = (b.branding_json?.heygen) || {};
         currentBrand.heygen = {
+          ...existingHeygen,
           enabled: enabledCheck.checked,
           avatarId: avatarId.value,
           voiceId: voiceId.value,

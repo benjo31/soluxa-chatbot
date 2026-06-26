@@ -184,8 +184,14 @@ publicRouter.post('/bots/:id/heygen/start', async (req, res) => {
   }
 
   // Décrypter la clé API LiveAvatar
-  const apiKey = decryptSecret(heygen.apiKeyEncrypted);
+  const apiKey = heygen.apiKeyEncrypted ? decryptSecret(heygen.apiKeyEncrypted) : null;
   if (!apiKey) {
+    // Fallback : clé par défaut depuis les variables d'env
+    if (config.liveavatarApiKey) {
+      const avatarId = heygen.avatarId || config.liveavatarAvatarId || '65f9e3c9-d48b-4118-b73a-4ae2e3cbb8f0';
+      const tokenData = await createSessionToken(config.liveavatarApiKey, avatarId, heygen.mode || 'LITE');
+      return res.json({ token: tokenData.session_token, sessionId: tokenData.session_id });
+    }
     return res.status(400).json({ error: 'heygen_api_key_missing' });
   }
 
