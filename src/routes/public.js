@@ -3,7 +3,7 @@ import { nanoid } from 'nanoid';
 import { sb } from '../db.js';
 import { getBot, chatStream, persistMessages } from '../chat.js';
 import { detectLeadIntent, createLead, sendNotification } from '../leads.js';
-import { getStreamToken, getHeyGenConfig } from '../heygen.js';
+import { createSessionToken, getHeyGenConfig } from '../heygen.js';
 import { decryptSecret } from '../crypto.js';
 
 export const publicRouter = express.Router();
@@ -165,13 +165,13 @@ publicRouter.post('/bots/:id/lead', async (req, res) => {
   res.json({ ok: true, id: leadId });
 });
 
-// ================ HEYGEN LIVE AVATAR ENDPOINTS ================
+// ================ LIVEAVATAR ENDPOINTS ================
 
 /**
- * Start a HeyGen streaming session for a bot
+ * Create a LiveAvatar streaming session token for a bot
  * POST /api/public/bots/:id/heygen/start
  * 
- * Returns a session token that the client SDK uses to connect via WebRTC.
+ * Returns a session_token that the client SDK uses to connect via WebRTC.
  */
 publicRouter.post('/bots/:id/heygen/start', async (req, res) => {
   const bot = await getBot(req.params.id);
@@ -183,16 +183,16 @@ publicRouter.post('/bots/:id/heygen/start', async (req, res) => {
     return res.status(400).json({ error: 'heygen_not_enabled' });
   }
 
-  // Décrypter la clé API HeyGen
+  // Décrypter la clé API LiveAvatar
   const apiKey = decryptSecret(heygen.apiKeyEncrypted);
   if (!apiKey) {
     return res.status(400).json({ error: 'heygen_api_key_missing' });
   }
 
   try {
-    const tokenData = await getStreamToken(apiKey);
+    const tokenData = await createSessionToken(apiKey, heygen.avatarId, heygen.mode || 'LITE');
     res.json({
-      token: tokenData.token,
+      token: tokenData.session_token,
       sessionId: tokenData.session_id,
     });
   } catch (e) {

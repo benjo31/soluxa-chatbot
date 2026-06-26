@@ -319,8 +319,12 @@
     const sendBtn = h('button', { class: 'sx-send' }, 'Envoyer');
 
     // Avatar button (visible only if enabled)
+    const avatarPreviewUrl = config.heygenAvatarPreview;
+    const avatarBtnContent = avatarPreviewUrl
+      ? h('img', { src: avatarPreviewUrl, style: 'width:22px;height:22px;border-radius:11px;object-fit:cover;vertical-align:middle;margin-right:4px' })
+      : '🎭';
     const avatarBtn = heygenEnabled
-      ? h('button', { class: 'sx-avatar-btn', title: 'Mode avatar' }, '🎭')
+      ? h('button', { class: 'sx-avatar-btn', title: 'Mode avatar' }, avatarBtnContent)
       : null;
 
     const footerChildren = avatarBtn

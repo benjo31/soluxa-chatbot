@@ -1,47 +1,53 @@
 /**
- * HeyGen Live Avatar integration for Soluxa Chatbot
+ * HeyGen LiveAvatar integration for Soluxa Chatbot
  * 
- * Uses the LiveAvatar Web SDK for client-side WebRTC.
- * Backend only needs to:
- * 1. Get a session token from HeyGen's API (POST /v1/streaming/token)
- * 2. Return it to the client
- * 3. Clean up if needed
+ * Uses the LiveAvatar API (api.liveavatar.com) to generate
+ * session tokens that the client-side SDK uses for WebRTC streaming.
+ * 
+ * API docs: https://docs.liveavatar.com/api-reference/sessions/create-session-token
  */
 
-const HEYGEN_API_BASE = 'https://api.heygen.com';
+const LIVEAVATAR_API_BASE = 'https://api.liveavatar.com';
 
 /**
- * Get a streaming token from HeyGen.
- * This token is passed to the client SDK which handles the rest.
- * Returns: { token, sessionId }
+ * Create a session token from the LiveAvatar API.
+ * This token is passed to the client SDK (LiveAvatarSession)
+ * which handles WebRTC + WebSocket streaming.
+ * 
+ * POST /v1/sessions/token
+ * Returns: { session_id, session_token }
  */
-export async function getStreamToken(apiKey) {
-  const res = await fetch(`${HEYGEN_API_BASE}/v1/streaming/token`, {
+export async function createSessionToken(apiKey, avatarId, mode = 'LITE') {
+  const res = await fetch(`${LIVEAVATAR_API_BASE}/v1/sessions/token`, {
     method: 'POST',
     headers: {
-      'X-Api-Key': apiKey,
+      'X-API-KEY': apiKey,
       'Content-Type': 'application/json',
     },
+    body: JSON.stringify({
+      avatar_id: avatarId,
+      mode,
+      is_sandbox: false,
+    }),
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`HeyGen token request failed: ${text}`);
+    throw new Error(`LiveAvatar token request failed: ${text}`);
   }
-  const data = await res.json();
-  return data.data; // { token, session_id }
+  const json = await res.json();
+  if (json.code !== 1000) {
+    throw new Error(`LiveAvatar API error: ${json.message || 'unknown'}`);
+  }
+  return json.data; // { session_id, session_token }
 }
 
 /**
- * Test if a HeyGen API key is valid
+ * Test if a LiveAvatar API key is valid
  */
 export async function testApiKey(apiKey) {
   try {
-    const res = await fetch(`${HEYGEN_API_BASE}/v1/streaming/token`, {
-      method: 'POST',
-      headers: {
-        'X-Api-Key': apiKey,
-        'Content-Type': 'application/json',
-      },
+    const res = await fetch(`${LIVEAVATAR_API_BASE}/v1/avatars/public`, {
+      headers: { 'X-API-KEY': apiKey },
     });
     return res.ok;
   } catch {
@@ -50,31 +56,43 @@ export async function testApiKey(apiKey) {
 }
 
 /**
- * List available avatars for a HeyGen account
+ * List available avatars for the LiveAvatar account
  */
 export async function listAvatars(apiKey) {
-  const res = await fetch(`${HEYGEN_API_BASE}/v3/avatars`, {
-    headers: { 'X-Api-Key': apiKey },
+  const res = await fetch(`${LIVEAVATAR_API_BASE}/v1/avatars`, {
+    headers: { 'X-API-KEY': apiKey },
   });
-  if (!res.ok) throw new Error(`HeyGen listAvatars failed`);
-  const { data } = await res.json();
-  return data;
+  if (!res.ok) throw new Error(`LiveAvatar listAvatars failed`);
+  const json = await res.json();
+  return json.data?.results || [];
 }
 
 /**
- * List available voices for a HeyGen account
+ * List public avatars available on LiveAvatar
+ */
+export async function listPublicAvatars(apiKey) {
+  const res = await fetch(`${LIVEAVATAR_API_BASE}/v1/avatars/public?page_size=100`, {
+    headers: { 'X-API-KEY': apiKey },
+  });
+  if (!res.ok) throw new Error(`LiveAvatar listPublicAvatars failed`);
+  const json = await res.json();
+  return json.data?.results || [];
+}
+
+/**
+ * List available voices for a LiveAvatar account
  */
 export async function listVoices(apiKey) {
-  const res = await fetch(`${HEYGEN_API_BASE}/v3/voices`, {
-    headers: { 'X-Api-Key': apiKey },
+  const res = await fetch(`${LIVEAVATAR_API_BASE}/v1/voices`, {
+    headers: { 'X-API-KEY': apiKey },
   });
-  if (!res.ok) throw new Error(`HeyGen listVoices failed`);
-  const { data } = await res.json();
-  return data;
+  if (!res.ok) throw new Error(`LiveAvatar listVoices failed`);
+  const json = await res.json();
+  return json.data?.results || [];
 }
 
 /**
- * Get the HeyGen configuration from a bot's branding_json
+ * Get the HeyGen/LiveAvatar configuration from a bot's branding_json
  */
 export function getHeyGenConfig(bot) {
   const branding = bot.branding_json ? JSON.parse(bot.branding_json) : {};

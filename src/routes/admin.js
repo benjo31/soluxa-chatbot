@@ -8,7 +8,7 @@ import { extractContent } from '../ingest/index.js';
 import { testKey } from '../llm/index.js';
 import { config } from '../config.js';
 import { chatStream } from '../chat.js';
-import { listAvatars, listVoices, testApiKey } from '../heygen.js';
+import { createSessionToken, listAvatars, listPublicAvatars, listVoices, testApiKey, getHeyGenConfig, setHeyGenConfig } from '../heygen.js';
 
 export const adminRouter = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
@@ -189,10 +189,22 @@ adminRouter.post('/bots/:id/heygen/avatars', async (req, res) => {
   if (!apiKey) return res.status(400).json({ error: 'api_key_required' });
   
   try {
+    // Try user avatars first, fallback to public
     const avatars = await listAvatars(apiKey);
-    res.json(avatars);
+    if (avatars.length === 0) {
+      const publicAvatars = await listPublicAvatars(apiKey);
+      res.json({ userAvatars: [], publicAvatars, source: 'public' });
+    } else {
+      res.json({ userAvatars: avatars, publicAvatars: [], source: 'user' });
+    }
   } catch (e) {
-    res.status(400).json({ error: e.message });
+    // Fallback to public avatars
+    try {
+      const publicAvatars = await listPublicAvatars(apiKey);
+      res.json({ userAvatars: [], publicAvatars, source: 'public' });
+    } catch (e2) {
+      res.status(400).json({ error: e2.message });
+    }
   }
 });
 

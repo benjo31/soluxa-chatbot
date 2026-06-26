@@ -157,7 +157,12 @@ function renderBotView() {
     ['general', 'Général'],
     ['branding', 'Branding'],
     ['llm', 'IA / Modèle'],
-    ['heygen', '🎭 Avatar IA'],
+    ['heygen', (() => {
+      const hg = (b.branding_json || {}).heygen || {};
+      return hg.avatarPreviewImage 
+        ? el('img', { src: hg.avatarPreviewImage, style: 'width:22px;height:22px;border-radius:11px;object-fit:cover;vertical-align:middle;margin-right:6px' }) 
+        : '🎭';
+    })(), 'Avatar IA'],
     ['documents', 'Documents'],
     ['contact', 'Contact'],
     ['embed', 'Intégration'],
@@ -840,10 +845,10 @@ function renderHeyGen(c) {
 
   card.appendChild(el('div', { class: 'form-grid' },
     el('div', { class: 'field full' },
-      el('label', { style: 'font-size: 16px; font-weight: 700' }, '🎭 Avatar IA (HeyGen Live)'),
+      el('label', { style: 'font-size: 16px; font-weight: 700' }, 'Avatar IA (LiveAvatar)'),
       el('small', { class: 'muted' }, 
         'Active un avatar IA qui parle en direct aux visiteurs. ' +
-        'Nécessite un compte HeyGen et un avatar créé dans leur dashboard.'
+        'Nécessite une clé API LiveAvatar (app.liveavatar.com).'
       ),
     ),
     el('div', { class: 'field', style: 'margin-top: 12px' },
@@ -854,8 +859,8 @@ function renderHeyGen(c) {
     ),
     previewImg ? el('div', { class: 'field full', style: 'text-align: center; padding: 8px 0' }, previewImg) : null,
     el('div', { class: 'field full' },
-      el('label', {}, 'Clé API HeyGen'),
-      el('small', {}, 'Trouvable dans Settings → API de votre compte HeyGen. Laissez vide pour conserver la clé existante.'),
+      el('label', {}, 'Clé API LiveAvatar'),
+      el('small', {}, 'Trouvable dans Settings → API de votre compte app.liveavatar.com. Laissez vide pour conserver.'),
       apiKey
     ),
     el('div', { class: 'field' },
