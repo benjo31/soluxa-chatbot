@@ -196,7 +196,8 @@ publicRouter.post('/bots/:id/heygen/start', async (req, res) => {
   }
 
   try {
-    const tokenData = await createSessionToken(apiKey, heygen.avatarId, heygen.mode || 'LITE');
+    const mode = heygen.mode || 'LITE';
+    const tokenData = await createSessionToken(apiKey, heygen.avatarId, mode);
     res.json({
       token: tokenData.session_token,
       sessionId: tokenData.session_id,

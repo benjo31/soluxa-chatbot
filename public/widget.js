@@ -550,7 +550,75 @@
         return Promise.resolve();
       }
       if (sdkLoadPromise) return sdkLoadPromise;
+      
+      // First, ensure events$1 shim is loaded (SDK depends on Node.js 'events' module)
       sdkLoadPromise = new Promise((resolve, reject) => {
+        if (!window.events$1) {
+          // Minimal EventEmitter shim compatible with Node.js EventEmitter
+          class MinimalEventEmitter {
+            constructor() {
+              this._events = {};
+            }
+            _callListeners(type, ...args) {
+              const list = this._events[type];
+              if (!list) return;
+              const listeners = Array.isArray(list) ? [...list] : [list];
+              for (const fn of listeners) {
+                try { fn.apply(this, args); } catch(e) { /* ignore */ }
+              }
+            }
+            on(type, listener) {
+              if (!this._events[type]) this._events[type] = [];
+              this._events[type].push(listener);
+              return this;
+            }
+            off(type, listener) {
+              const list = this._events[type];
+              if (!list) return this;
+              const idx = list.indexOf(listener);
+              if (idx !== -1) list.splice(idx, 1);
+              if (list.length === 0) delete this._events[type];
+              return this;
+            }
+            removeListener(type, listener) { return this.off(type, listener); }
+            addListener(type, listener) { return this.on(type, listener); }
+            emit(type, ...args) {
+              this._callListeners(type, ...args);
+              // Also call 'error' handler if error event
+              if (type === 'error') {
+                const err = args[0];
+                if (!this._events['error']) throw err;
+              }
+              return true;
+            }
+            once(type, listener) {
+              const wrapper = (...args) => {
+                this.off(type, wrapper);
+                listener.apply(this, args);
+              };
+              return this.on(type, wrapper);
+            }
+            listenerCount(type) {
+              const list = this._events[type];
+              return list ? (Array.isArray(list) ? list.length : 1) : 0;
+            }
+            removeAllListeners(type) {
+              if (type) delete this._events[type];
+              else this._events = {};
+              return this;
+            }
+            eventNames() { return Object.keys(this._events); }
+            rawListeners(type) {
+              const list = this._events[type];
+              return list ? (Array.isArray(list) ? [...list] : [list]) : [];
+            }
+            listeners(type) { return this.rawListeners(type); }
+          }
+          MinimalEventEmitter.prototype.EventEmitter = MinimalEventEmitter;
+          window.events$1 = { EventEmitter: MinimalEventEmitter };
+        }
+
+        // Now load the SDK
         const script = document.createElement('script');
         script.src = `${baseUrl}/vendor/heygen-liveavatar-sdk.js`;
         script.async = true;
