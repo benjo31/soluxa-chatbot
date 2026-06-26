@@ -233,13 +233,26 @@ publicRouter.post('/bots/:id/heygen/talk', async (req, res) => {
     return res.status(400).json({ error: 'heygen_not_enabled' });
   }
 
-  const { conversationId, message } = req.body || {};
+  const { conversationId, message, sessionId: clientSessionId } = req.body || {};
   if (!conversationId || !message) return res.status(400).json({ error: 'missing_fields' });
 
-  // Vérifier la session HeyGen
-  const session = streamingSessions.get(bot.id);
-  if (!session || Date.now() > session.expiresAt) {
+  // Récupérer la session — soit du client, soit du cache serveur
+  let session = clientSessionId ? { sessionId: clientSessionId } : streamingSessions.get(bot.id);
+
+  // Si pas de session, essayer d'en créer une
+  if (!session) {
     return res.status(400).json({ error: 'heygen_session_expired', action: 'restart' });
+  }
+
+  // Si on a la sessionId mais pas l'apiKey, la chercher
+  if (!session.apiKey) {
+    const cached = streamingSessions.get(bot.id);
+    if (cached) {
+      session.apiKey = cached.apiKey;
+    } else {
+      // Need to re-auth
+      return res.status(400).json({ error: 'heygen_session_expired', action: 'restart' });
+    }
   }
 
   const { data: conv, error: convErr } = await sb

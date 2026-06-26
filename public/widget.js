@@ -40,6 +40,25 @@
     return el;
   };
 
+  // Simple toast notification
+  function toast(msg) {
+    const t = document.createElement('div');
+    t.textContent = msg;
+    Object.assign(t.style, {
+      position: 'fixed', bottom: '100px', right: '24px',
+      background: '#002d5d', color: '#fff', padding: '10px 18px',
+      borderRadius: '10px', fontSize: '13px', fontWeight: '600',
+      boxShadow: '0 4px 16px rgba(0,0,0,0.2)', zIndex: '2147483647',
+      opacity: '0', transform: 'translateY(8px)', transition: 'all 0.2s ease',
+    });
+    document.body.appendChild(t);
+    requestAnimationFrame(() => { t.style.opacity = '1'; t.style.transform = 'translateY(0)'; });
+    setTimeout(() => {
+      t.style.opacity = '0'; t.style.transform = 'translateY(8px)';
+      setTimeout(() => t.remove(), 300);
+    }, 2200);
+  }
+
   // -------- CSS (injecté dans Shadow DOM) --------
   function buildCss(brand) {
     const title = brand.titleColor || '#62a70f';
@@ -47,8 +66,6 @@
     const bg = brand.bgColor || '#FFFFFF';
     const accent = brand.accentColor || title;
     const font = brand.font || "'Source Sans Pro', sans-serif";
-    const heygen = brand.heygen || {};
-    const hasAvatar = heygen.enabled;
     return `
       :host { all: initial; }
       * { box-sizing: border-box; font-family: ${font}; }
@@ -127,22 +144,89 @@
       .sx-send {
         background: ${title}; color: #fff; border: none;
         border-radius: 10px; padding: 0 14px; cursor: pointer; font-weight: 600;
+      }
       .sx-send:disabled { opacity: .5; cursor: not-allowed; }
       .sx-poweredby { text-align: center; font-size: 11px; color: rgba(0,0,0,0.45); padding: 6px 0 2px; }
       .sx-poweredby a { color: inherit; text-decoration: none; }
 
-      /* Avatar video */
-      .sx-avatar-area { display: none; width: 100%; background: #000; border-radius: 12px; overflow: hidden; margin-bottom: 8px; }
-      .sx-avatar-area.sx-open { display: block; }
-      .sx-avatar-area video { width: 100%; display: block; }
-      .sx-avatar-toggle {
-        background: ${accent}; color: #fff; border: none; border-radius: 10px;
-        padding: 8px 12px; cursor: pointer; font-size: 12px; font-weight: 600;
-        white-space: nowrap;
+      /* Avatar toggle button in footer */
+      .sx-avatar-btn {
+        background: rgba(0,0,0,0.04); color: ${text};
+        border: 1px solid rgba(0,0,0,0.08); border-radius: 10px;
+        padding: 0 10px; cursor: pointer; font-size: 14px; font-weight: 500;
+        white-space: nowrap; font-family: ${font};
+        transition: all 0.15s ease;
       }
-      .sx-avatar-toggle.sx-active { background: #d23f3f; }
-      .sx-avatar-btn-row { display: flex; gap: 6px; align-items: center; }
+      .sx-avatar-btn:hover { background: rgba(0,0,0,0.07); }
 
+      /* Avatar overlay - full panel takeover */
+      .sx-avatar-overlay {
+        display: none;
+        position: absolute; inset: 0;
+        background: #0d0d1a;
+        z-index: 20;
+        flex-direction: column;
+        border-radius: 16px;
+        overflow: hidden;
+      }
+      .sx-avatar-overlay.sx-open { display: flex; }
+      .sx-avatar-overlay .sx-av-head {
+        display: flex; align-items: center; justify-content: center;
+        padding: 16px 16px 0;
+        position: relative;
+      }
+      .sx-avatar-overlay .sx-av-head .sx-av-name {
+        color: rgba(255,255,255,0.7); font-size: 13px; font-weight: 500;
+      }
+      .sx-avatar-overlay .sx-av-head .sx-av-back {
+        position: absolute; left: 12px; top: 12px;
+        background: rgba(255,255,255,0.08); border: none; color: #fff;
+        padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 13px;
+      }
+      .sx-avatar-overlay .sx-av-video {
+        flex: 1;
+        display: flex; align-items: center; justify-content: center;
+        padding: 12px;
+      }
+      .sx-avatar-overlay .sx-av-video video {
+        max-width: 100%; max-height: 100%;
+        border-radius: 16px; object-fit: contain;
+        box-shadow: 0 0 60px rgba(98,167,15,0.08);
+      }
+      .sx-avatar-overlay .sx-av-status {
+        text-align: center;
+        padding: 0 16px 8px;
+        min-height: 20px;
+        font-size: 12px; color: rgba(255,255,255,0.35);
+      }
+      .sx-avatar-overlay .sx-av-status .sx-av-dots span {
+        display: inline-block; width: 5px; height: 5px;
+        border-radius: 50%; background: ${accent};
+        margin: 0 2px; animation: sxAvPulse 1s ease-in-out infinite;
+      }
+      .sx-avatar-overlay .sx-av-status .sx-av-dots span:nth-child(2) { animation-delay: 0.15s; }
+      .sx-avatar-overlay .sx-av-status .sx-av-dots span:nth-child(3) { animation-delay: 0.3s; }
+      @keyframes sxAvPulse { 0%, 100% { opacity: 0.2; } 50% { opacity: 1; } }
+
+      .sx-avatar-overlay .sx-av-footer {
+        padding: 12px 16px 16px;
+      }
+      .sx-avatar-overlay .sx-av-input-row {
+        display: flex; gap: 8px;
+      }
+      .sx-avatar-overlay .sx-av-input {
+        flex: 1; padding: 10px 14px;
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.1); border-radius: 10px;
+        font-size: 14px; color: #fff; outline: none; font-family: ${font};
+      }
+      .sx-avatar-overlay .sx-av-input:focus { border-color: ${accent}; }
+      .sx-avatar-overlay .sx-av-input::placeholder { color: rgba(255,255,255,0.3); }
+      .sx-avatar-overlay .sx-av-send {
+        background: ${accent}; color: #fff; border: none;
+        border-radius: 10px; padding: 0 16px; cursor: pointer; font-weight: 600;
+      }
+      .sx-avatar-overlay .sx-av-send:disabled { opacity: 0.3; cursor: not-allowed; }
 
       /* Lead form modal */
       .sx-modal-backdrop {
@@ -205,6 +289,7 @@
 
     ensureFont();
     const brand = config.branding || {};
+    const heygenEnabled = config.heygenEnabled;
 
     // Container + Shadow DOM
     const host = document.createElement('div');
@@ -230,25 +315,19 @@
 
     // Panel
     const body = h('div', { class: 'sx-body' });
-    const avatarArea = h('div', { class: 'sx-avatar-area' },
-      h('video', { autoplay: true, muted: true, playsinline: true })
-    );
     const input = h('input', { class: 'sx-input', type: 'text', placeholder: 'Écrivez votre message…', autocomplete: 'off' });
     const sendBtn = h('button', { class: 'sx-send' }, 'Envoyer');
-    const avatarBtn = h('button', { class: 'sx-avatar-toggle', style: 'display:none' },
-      '🎭 Avatar'
-    );
 
-    // Avatar state
-    let avatarActive = false;
-    let heygenSessionId = null;
-    const footer = h('div', { class: 'sx-footer' },
-      h('div', { class: 'sx-input-row' },
-        avatarBtn,
-        input, sendBtn
-      ),
-      h('div', { class: 'sx-poweredby' }, 'Propulsé par Soluxa')
-    );
+    // Avatar button (visible only if enabled)
+    const avatarBtn = heygenEnabled
+      ? h('button', { class: 'sx-avatar-btn', title: 'Mode avatar' }, '🎭')
+      : null;
+
+    const footerChildren = avatarBtn
+      ? [h('div', { class: 'sx-input-row' }, avatarBtn, input, sendBtn)]
+      : [h('div', { class: 'sx-input-row' }, input, sendBtn)];
+    footerChildren.push(h('div', { class: 'sx-poweredby' }, 'Propulsé par Soluxa'));
+    const footer = h('div', { class: 'sx-footer' }, ...footerChildren);
 
     const closeBtn = h('button', { class: 'sx-close', 'aria-label': 'Fermer' }, '×');
     const headerEls = [];
@@ -256,6 +335,136 @@
     headerEls.push(h('div', { class: 'sx-title' }, config.name || 'Assistant'));
     headerEls.push(closeBtn);
     const header = h('div', { class: 'sx-header' }, ...headerEls);
+
+    // ---- Avatar overlay ----
+    let avatarOverlay = null;
+    let heygenSessionId = null;
+    let avatarSpeaking = false;
+    let avatarReady = false;
+
+    if (heygenEnabled) {
+      const avVideo = h('video', { autoplay: true, muted: true, playsinline: true });
+      const avStatus = h('div', { class: 'sx-av-status' }, 'Appuyez sur Entrée pour parler à Lumia');
+      const avInput = h('input', { class: 'sx-av-input', type: 'text', placeholder: 'Écrivez votre message…', autocomplete: 'off' });
+      const avSend = h('button', { class: 'sx-av-send' }, 'Envoyer');
+      const avBack = h('button', { class: 'sx-av-back' }, '←  Chat');
+      const avFooter = h('div', { class: 'sx-av-footer' },
+        h('div', { class: 'sx-av-input-row' }, avInput, avSend)
+      );
+
+      avatarOverlay = h('div', { class: 'sx-avatar-overlay' },
+        h('div', { class: 'sx-av-head' },
+          avBack,
+          h('span', { class: 'sx-av-name' }, '🎭  ' + (config.name || 'Assistant'))
+        ),
+        h('div', { class: 'sx-av-video' }, avVideo),
+        avStatus,
+        avFooter
+      );
+
+      // Avatar send logic
+      async function avatarSend(text) {
+        if (!text.trim() || avatarSpeaking) return;
+        avInput.value = '';
+        avSend.disabled = true;
+        avatarSpeaking = true;
+        avStatus.innerHTML = '<span class="sx-av-dots"><span></span><span></span><span></span></span>';
+        try {
+          await ensureConversation();
+          const resp = await fetch(`${baseUrl}/api/public/bots/${botId}/heygen/talk`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ conversationId, message: text, sessionId: heygenSessionId }),
+          });
+          if (!resp.ok || !resp.body) throw new Error('talk_failed');
+          // Read SSE stream to persistence happens on server side
+          const reader = resp.body.getReader();
+          const decoder = new TextDecoder();
+          let buf = '';
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
+            const lines = buf.split('\n');
+            buf = lines.pop();
+            for (const line of lines) {
+              if (!line.startsWith('data:')) continue;
+              const payload = line.slice(5).trim();
+              if (!payload) continue;
+              try {
+                const obj = JSON.parse(payload);
+                if (obj.event === 'avatar_done') {
+                  avStatus.textContent = '✔ Réponse terminée';
+                } else if (obj.event === 'llm_start') {
+                  avStatus.textContent = 'Réflexion…';
+                } else if (obj.event === 'avatar_start') {
+                  avStatus.textContent = '🎙 Lumia parle…';
+                } else if (obj.event === 'avatar_error') {
+                  avStatus.textContent = '⚠ Erreur avatar, réessayez';
+                } else if (obj.event === 'done') {
+                  avatarSpeaking = false;
+                  avSend.disabled = false;
+                  avInput.focus();
+                  avStatus.textContent = 'Appuyez sur Entrée pour parler à Lumia';
+                }
+              } catch {}
+            }
+          }
+        } catch (e) {
+          avStatus.textContent = '⚠ Erreur, réessayez';
+        } finally {
+          avatarSpeaking = false;
+          avSend.disabled = false;
+          setTimeout(() => {
+            if (!avatarSpeaking) avStatus.textContent = 'Appuyez sur Entrée pour parler à Lumia';
+          }, 1500);
+        }
+      }
+
+      avBack.addEventListener('click', closeAvatarMode);
+      avSend.addEventListener('click', () => avatarSend(avInput.value));
+      avInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); avatarSend(avInput.value); }
+      });
+    }
+
+    function openAvatarMode() {
+      if (!avatarOverlay) return;
+      avatarOverlay.classList.add('sx-open');
+      avatarBtn.classList.add('sx-active');
+      const avInput = avatarOverlay.querySelector('.sx-av-input');
+      setTimeout(() => avInput?.focus(), 100);
+      // Start HeyGen session
+      fetch(`${baseUrl}/api/public/bots/${botId}/heygen/start`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+      }).then(r => r.json()).then(d => {
+        heygenSessionId = d.sessionId;
+        toast('🎭 Lumia est prêt !');
+      }).catch(() => {
+        toast('Erreur avatar', false);
+      });
+    }
+
+    function closeAvatarMode() {
+      if (!avatarOverlay) return;
+      avatarOverlay.classList.remove('sx-open');
+      avatarBtn.classList.remove('sx-active');
+      heygenSessionId = null;
+      fetch(`${baseUrl}/api/public/bots/${botId}/heygen/stop`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+      }).catch(() => {});
+      setTimeout(() => input.focus(), 100);
+    }
+
+    if (avatarBtn) {
+      avatarBtn.addEventListener('click', () => {
+        if (avatarOverlay.classList.contains('sx-open')) {
+          closeAvatarMode();
+        } else {
+          openAvatarMode();
+        }
+      });
+    }
 
     // Modal lead
     const modalNameInput = h('input', { type: 'text', placeholder: 'Votre nom' });
@@ -274,13 +483,13 @@
     );
     const modalBackdrop = h('div', { class: 'sx-modal-backdrop' }, modal);
 
-    const panel = h('div', { class: 'sx-panel' }, header, avatarArea, body, footer, modalBackdrop);
+    const panel = h('div', { class: 'sx-panel' }, header, avatarOverlay || null, body, footer, modalBackdrop);
     shadow.appendChild(panel);
 
     // -------- State --------
-    const state = getStore();
-    let conversationId = state.conversationId || null;
-    let visitorId = state.visitorId || null;
+    const store = getStore();
+    let conversationId = store.conversationId || null;
+    let visitorId = store.visitorId || null;
     let leadSubmitted = false;
 
     // -------- Load conversation history --------
@@ -310,48 +519,6 @@
         body.appendChild(h('div', { class: 'sx-msg sx-msg-bot' }, config.welcome));
       }
     });
-
-    // -------- HeyGen Avatar initialization --------
-    const videoEl = avatarArea.querySelector('video');
-    let avatarStream = null;
-
-    if (config.heygenEnabled) {
-      avatarBtn.style.display = '';
-      avatarBtn.addEventListener('click', async () => {
-        avatarActive = !avatarActive;
-        avatarBtn.textContent = avatarActive ? '✕ Avatar' : '🎭 Avatar';
-        avatarBtn.classList.toggle('sx-active', avatarActive);
-        avatarArea.classList.toggle('sx-open', avatarActive);
-
-        if (avatarActive) {
-          try {
-            // Start HeyGen session
-            const res = await fetch(`${baseUrl}/api/public/bots/${botId}/heygen/start`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-            });
-            const data = await res.json();
-            heygenSessionId = data.sessionId;
-            toast('Avatar activé !');
-          } catch (e) {
-            console.error('[avatar] start error:', e);
-            avatarActive = false;
-            avatarBtn.textContent = '🎭 Avatar';
-            avatarBtn.classList.remove('sx-active');
-            avatarArea.classList.remove('sx-open');
-          }
-        } else {
-          // Stop HeyGen session
-          try {
-            await fetch(`${baseUrl}/api/public/bots/${botId}/heygen/stop`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-            });
-          } catch {}
-          heygenSessionId = null;
-        }
-      });
-    }
 
     // -------- Behaviors --------
     const openPanel = () => { panel.classList.add('sx-open'); launcher.style.display = 'none'; setTimeout(() => input.focus(), 100); };
@@ -424,10 +591,7 @@
 
       try {
         await ensureConversation();
-        const chatEndpoint = avatarActive && heygenSessionId
-          ? `${baseUrl}/api/public/bots/${botId}/heygen/talk`
-          : `${baseUrl}/api/public/bots/${botId}/chat`;
-        const resp = await fetch(chatEndpoint, {
+        const resp = await fetch(`${baseUrl}/api/public/bots/${botId}/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ conversationId, message: text }),
