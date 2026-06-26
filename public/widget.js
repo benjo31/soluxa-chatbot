@@ -440,7 +440,7 @@
           method: 'POST', headers: { 'Content-Type': 'application/json' },
         });
       }).then(r => r.json()).then(data => {
-        const token = data.token;
+        const token = data.session_token || data.token;
         if (!token) throw new Error('no_token');
 
         // 3. Create and start LiveAvatar session
@@ -493,12 +493,12 @@
         // Start the session
         avatarSession.start().catch((err) => {
           console.error('[avatar] session start error:', err);
-          avatarStatus('⚠ Erreur de connexion');
+          avatarStatus('⚠ Erreur: ' + (err.message || 'connexion'));
           avatarReady = false;
         });
       }).catch((err) => {
         console.error('[avatar] init error:', err);
-        avatarStatus('⚠ Erreur, réessayez');
+        avatarStatus('⚠ Erreur: ' + (err.message || 'initialisation'));
       });
     }
 
