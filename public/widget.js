@@ -47,6 +47,8 @@
     const bg = brand.bgColor || '#FFFFFF';
     const accent = brand.accentColor || title;
     const font = brand.font || "'Source Sans Pro', sans-serif";
+    const heygen = brand.heygen || {};
+    const hasAvatar = heygen.enabled;
     return `
       :host { all: initial; }
       * { box-sizing: border-box; font-family: ${font}; }
@@ -125,10 +127,22 @@
       .sx-send {
         background: ${title}; color: #fff; border: none;
         border-radius: 10px; padding: 0 14px; cursor: pointer; font-weight: 600;
-      }
       .sx-send:disabled { opacity: .5; cursor: not-allowed; }
       .sx-poweredby { text-align: center; font-size: 11px; color: rgba(0,0,0,0.45); padding: 6px 0 2px; }
       .sx-poweredby a { color: inherit; text-decoration: none; }
+
+      /* Avatar video */
+      .sx-avatar-area { display: none; width: 100%; background: #000; border-radius: 12px; overflow: hidden; margin-bottom: 8px; }
+      .sx-avatar-area.sx-open { display: block; }
+      .sx-avatar-area video { width: 100%; display: block; }
+      .sx-avatar-toggle {
+        background: ${accent}; color: #fff; border: none; border-radius: 10px;
+        padding: 8px 12px; cursor: pointer; font-size: 12px; font-weight: 600;
+        white-space: nowrap;
+      }
+      .sx-avatar-toggle.sx-active { background: #d23f3f; }
+      .sx-avatar-btn-row { display: flex; gap: 6px; align-items: center; }
+
 
       /* Lead form modal */
       .sx-modal-backdrop {
@@ -216,10 +230,23 @@
 
     // Panel
     const body = h('div', { class: 'sx-body' });
+    const avatarArea = h('div', { class: 'sx-avatar-area' },
+      h('video', { autoplay: true, muted: true, playsinline: true })
+    );
     const input = h('input', { class: 'sx-input', type: 'text', placeholder: 'Écrivez votre message…', autocomplete: 'off' });
     const sendBtn = h('button', { class: 'sx-send' }, 'Envoyer');
+    const avatarBtn = h('button', { class: 'sx-avatar-toggle', style: 'display:none' },
+      '🎭 Avatar'
+    );
+
+    // Avatar state
+    let avatarActive = false;
+    let heygenSessionId = null;
     const footer = h('div', { class: 'sx-footer' },
-      h('div', { class: 'sx-input-row' }, input, sendBtn),
+      h('div', { class: 'sx-input-row' },
+        avatarBtn,
+        input, sendBtn
+      ),
       h('div', { class: 'sx-poweredby' }, 'Propulsé par Soluxa')
     );
 
@@ -247,7 +274,7 @@
     );
     const modalBackdrop = h('div', { class: 'sx-modal-backdrop' }, modal);
 
-    const panel = h('div', { class: 'sx-panel' }, header, body, footer, modalBackdrop);
+    const panel = h('div', { class: 'sx-panel' }, header, avatarArea, body, footer, modalBackdrop);
     shadow.appendChild(panel);
 
     // -------- State --------
@@ -283,6 +310,48 @@
         body.appendChild(h('div', { class: 'sx-msg sx-msg-bot' }, config.welcome));
       }
     });
+
+    // -------- HeyGen Avatar initialization --------
+    const videoEl = avatarArea.querySelector('video');
+    let avatarStream = null;
+
+    if (config.heygenEnabled) {
+      avatarBtn.style.display = '';
+      avatarBtn.addEventListener('click', async () => {
+        avatarActive = !avatarActive;
+        avatarBtn.textContent = avatarActive ? '✕ Avatar' : '🎭 Avatar';
+        avatarBtn.classList.toggle('sx-active', avatarActive);
+        avatarArea.classList.toggle('sx-open', avatarActive);
+
+        if (avatarActive) {
+          try {
+            // Start HeyGen session
+            const res = await fetch(`${baseUrl}/api/public/bots/${botId}/heygen/start`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+            });
+            const data = await res.json();
+            heygenSessionId = data.sessionId;
+            toast('Avatar activé !');
+          } catch (e) {
+            console.error('[avatar] start error:', e);
+            avatarActive = false;
+            avatarBtn.textContent = '🎭 Avatar';
+            avatarBtn.classList.remove('sx-active');
+            avatarArea.classList.remove('sx-open');
+          }
+        } else {
+          // Stop HeyGen session
+          try {
+            await fetch(`${baseUrl}/api/public/bots/${botId}/heygen/stop`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+            });
+          } catch {}
+          heygenSessionId = null;
+        }
+      });
+    }
 
     // -------- Behaviors --------
     const openPanel = () => { panel.classList.add('sx-open'); launcher.style.display = 'none'; setTimeout(() => input.focus(), 100); };
@@ -355,7 +424,10 @@
 
       try {
         await ensureConversation();
-        const resp = await fetch(`${baseUrl}/api/public/bots/${botId}/chat`, {
+        const chatEndpoint = avatarActive && heygenSessionId
+          ? `${baseUrl}/api/public/bots/${botId}/heygen/talk`
+          : `${baseUrl}/api/public/bots/${botId}/chat`;
+        const resp = await fetch(chatEndpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ conversationId, message: text }),

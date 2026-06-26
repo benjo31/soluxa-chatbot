@@ -157,6 +157,7 @@ function renderBotView() {
     ['general', 'Général'],
     ['branding', 'Branding'],
     ['llm', 'IA / Modèle'],
+    ['heygen', '🎭 Avatar IA'],
     ['documents', 'Documents'],
     ['contact', 'Contact'],
     ['embed', 'Intégration'],
@@ -179,6 +180,7 @@ function renderBotView() {
     case 'general': renderGeneral(content); break;
     case 'branding': renderBranding(content); break;
     case 'llm': renderLlm(content); break;
+    case 'heygen': renderHeyGen(content); break;
     case 'documents': renderDocuments(content); break;
     case 'contact': renderContact(content); break;
     case 'embed': renderEmbed(content); break;
@@ -807,4 +809,157 @@ function renderTest(c) {
   chat.appendChild(inputRow);
 
   setTimeout(() => input.focus(), 100);
+}
+
+// ------------- TAB: HeyGen Avatar -------------
+function renderHeyGen(c) {
+  const b = state.current;
+  const brand = b.branding_json || {};
+  const heygen = brand.heygen || {};
+
+  const card = el('div', { class: 'card' });
+
+  // Enable/Disable
+  const enabledCheck = el('input', { type: 'checkbox' });
+  if (heygen.enabled) enabledCheck.checked = true;
+
+  // Avatar ID
+  const avatarId = el('input', { type: 'text', value: heygen.avatarId || '', placeholder: 'dcb153d41b224097a5f6ba022c67e765' });
+
+  // Voice ID
+  const voiceId = el('input', { type: 'text', value: heygen.voiceId || '', placeholder: 'UvibdZd95XfCrRqaqDQC' });
+
+  // API Key
+  const apiKey = el('input', { type: 'password', value: '', placeholder: 'sk_V2_... (laissez vide pour conserver)' });
+
+  // Avatar preview
+  const previewImg = heygen.avatarPreviewImage ? el('img', {
+    src: heygen.avatarPreviewImage,
+    style: 'width: 120px; height: 120px; border-radius: 60px; object-fit: cover; border: 3px solid #62a70f;',
+  }) : null;
+
+  card.appendChild(el('div', { class: 'form-grid' },
+    el('div', { class: 'field full' },
+      el('label', { style: 'font-size: 16px; font-weight: 700' }, '🎭 Avatar IA (HeyGen Live)'),
+      el('small', { class: 'muted' }, 
+        'Active un avatar IA qui parle en direct aux visiteurs. ' +
+        'Nécessite un compte HeyGen et un avatar créé dans leur dashboard.'
+      ),
+    ),
+    el('div', { class: 'field', style: 'margin-top: 12px' },
+      el('label', {}, 'Activer l\'avatar'),
+      el('div', { style: 'display: flex; alignItems: center; gap: 8px; padding: 8px 0' },
+        enabledCheck, el('span', { class: 'muted' }, 'L\'avatar apparaît sur le widget à côté du chat texte')
+      )
+    ),
+    previewImg ? el('div', { class: 'field full', style: 'text-align: center; padding: 8px 0' }, previewImg) : null,
+    el('div', { class: 'field full' },
+      el('label', {}, 'Clé API HeyGen'),
+      el('small', {}, 'Trouvable dans Settings → API de votre compte HeyGen. Laissez vide pour conserver la clé existante.'),
+      apiKey
+    ),
+    el('div', { class: 'field' },
+      el('label', {}, 'ID de l\'avatar'),
+      el('small', {}, 'Exemple : dcb153d41b224097a5f6ba022c67e765 (Lumia)'),
+      avatarId
+    ),
+    el('div', { class: 'field' },
+      el('label', {}, 'ID de la voix'),
+      el('small', {}, 'Exemple : 16a09e4706f74997ba4ed05ea11470f6 (Cassidy)'),
+      voiceId
+    ),
+  ));
+
+  // Actions
+  card.appendChild(el('div', { style: 'marginTop: 16px; display: flex; gap: 8px' },
+    el('button', {
+      class: 'btn-primary',
+      onclick: async () => {
+        const patch = {};
+        const currentBrand = { ...(b.branding_json || {}) };
+        
+        // Récupérer les infos des avatars pour la preview
+        let previewUrl = heygen.avatarPreviewImage;
+        if (avatarId.value && avatarId.value !== heygen.avatarId) {
+          try {
+            const avatars = await api(`/api/admin/bots/${b.id}/heygen/avatars`, {
+              method: 'POST',
+              body: JSON.stringify({ apiKey: apiKey.value || undefined }),
+            });
+            const found = avatars.find(a => a.id === avatarId.value);
+            if (found) previewUrl = found.preview_image_url;
+          } catch (e) {
+            // Silently fail - preview just won't update
+          }
+        }
+
+        // Si une nouvelle clé API est fournie, on la chiffre côté serveur
+        if (apiKey.value) {
+          await api(`/api/admin/bots/${b.id}/heygen/key`, {
+            method: 'POST',
+            body: JSON.stringify({ apiKey: apiKey.value }),
+          });
+          // La clé est stockée sur le serveur, pas dans branding
+        }
+
+        currentBrand.heygen = {
+          enabled: enabledCheck.checked,
+          avatarId: avatarId.value,
+          voiceId: voiceId.value,
+          avatarPreviewImage: previewUrl,
+        };
+
+        await saveBot({ branding: currentBrand });
+      }
+    }, 'Enregistrer'),
+    el('button', {
+      class: 'btn-secondary',
+      onclick: async () => {
+        if (!avatarId.value) { toast('Entrez un ID d\'avatar', false); return; }
+        try {
+          const avatars = await api(`/api/admin/bots/${b.id}/heygen/avatars`, {
+            method: 'POST',
+            body: JSON.stringify({ apiKey: apiKey.value || undefined }),
+          });
+          const found = avatars.find(a => a.id === avatarId.value);
+          if (found) {
+            avatarId.value = found.id;
+            if (found.default_voice_id) voiceId.value = found.default_voice_id;
+            toast(`Avatar trouvé : ${found.name}`);
+          } else {
+            toast('Avatar non trouvé', false);
+          }
+        } catch (e) {
+          toast('Erreur : ' + e.message, false);
+        }
+      }
+    }, 'Vérifier l\'avatar'),
+    el('button', {
+      class: 'btn-secondary',
+      onclick: async () => {
+        try {
+          const voices = await api(`/api/admin/bots/${b.id}/heygen/voices`, {
+            method: 'POST',
+            body: JSON.stringify({ apiKey: apiKey.value || undefined }),
+          });
+          const list = voices.slice(0, 20).map(v => `${v.name} (${v.voice_id})`).join('\n');
+          toast(`${voices.length} voix disponibles. Ex: ${voices[0]?.name}`);
+          console.log('HeyGen voices:', voices);
+        } catch (e) {
+          toast('Erreur : ' + e.message, false);
+        }
+      }
+    }, 'Lister les voix'),
+  ));
+
+  // Helper info
+  card.appendChild(el('div', { style: 'marginTop: 20px; padding: 12px; background: #f0f7ff; borderRadius: 8px; fontSize: 13px' },
+    el('strong', {}, 'Comment ça marche ?'),
+    el('br'),
+    el('span', {}, 'L\'avatar HeyGen apparaît dans le widget à côté du chat texte. ' +
+      'Quand le visiteur envoie un message, le LLM répond (texte), puis l\'avatar prononce la réponse. ' +
+      'Le visiteur voit l\'avatar parler avec les lèvres synchronisées.'),
+  ));
+
+  c.appendChild(card);
 }

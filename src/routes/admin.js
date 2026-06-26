@@ -3,11 +3,12 @@ import multer from 'multer';
 import { nanoid } from 'nanoid';
 import { sb } from '../db.js';
 import { verifyAdmin, createSession, destroySession, requireAdmin } from '../auth.js';
-import { decryptSecret } from '../crypto.js';
+import { decryptSecret, encryptSecret } from '../crypto.js';
 import { extractContent } from '../ingest/index.js';
 import { testKey } from '../llm/index.js';
 import { config } from '../config.js';
 import { chatStream } from '../chat.js';
+import { listAvatars, listVoices, testApiKey } from '../heygen.js';
 
 export const adminRouter = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
@@ -152,6 +153,66 @@ adminRouter.post('/bots/:id/test-llm', async (req, res) => {
     res.json({ ok });
   } catch (e) {
     res.status(400).json({ ok: false, error: e?.message || 'failed' });
+  }
+});
+
+// ---------- HEYGEN AVATAR ----------
+adminRouter.post('/bots/:id/heygen/key', async (req, res) => {
+  const { data: b, error: findErr } = await sb.from('bots').select('id, branding_json').eq('id', req.params.id).maybeSingle();
+  if (findErr || !b) return res.status(404).json({ error: 'not_found' });
+  
+  const { apiKey } = req.body || {};
+  if (!apiKey) return res.status(400).json({ error: 'api_key_required' });
+
+  // Store encrypted API key in branding_json
+  const branding = b.branding_json ? JSON.parse(b.branding_json) : {};
+  branding.heygen = branding.heygen || {};
+  branding.heygen.apiKeyEncrypted = encryptSecret(apiKey);
+  
+  const { error } = await sb.from('bots').update({ branding_json: JSON.stringify(branding), updated_at: new Date().toISOString() }).eq('id', req.params.id);
+  if (error) return res.status(500).json({ error: error.message });
+  
+  res.json({ ok: true });
+});
+
+adminRouter.post('/bots/:id/heygen/avatars', async (req, res) => {
+  const { data: b, error: findErr } = await sb.from('bots').select('id, branding_json').eq('id', req.params.id).maybeSingle();
+  if (findErr || !b) return res.status(404).json({ error: 'not_found' });
+  
+  // Use provided key or try stored key
+  let apiKey = req.body?.apiKey;
+  if (!apiKey) {
+    const branding = b.branding_json ? JSON.parse(b.branding_json) : {};
+    const encrypted = branding.heygen?.apiKeyEncrypted;
+    if (encrypted) apiKey = decryptSecret(encrypted);
+  }
+  if (!apiKey) return res.status(400).json({ error: 'api_key_required' });
+  
+  try {
+    const avatars = await listAvatars(apiKey);
+    res.json(avatars);
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+adminRouter.post('/bots/:id/heygen/voices', async (req, res) => {
+  const { data: b, error: findErr } = await sb.from('bots').select('id, branding_json').eq('id', req.params.id).maybeSingle();
+  if (findErr || !b) return res.status(404).json({ error: 'not_found' });
+  
+  let apiKey = req.body?.apiKey;
+  if (!apiKey) {
+    const branding = b.branding_json ? JSON.parse(b.branding_json) : {};
+    const encrypted = branding.heygen?.apiKeyEncrypted;
+    if (encrypted) apiKey = decryptSecret(encrypted);
+  }
+  if (!apiKey) return res.status(400).json({ error: 'api_key_required' });
+  
+  try {
+    const voices = await listVoices(apiKey);
+    res.json(voices);
+  } catch (e) {
+    res.status(400).json({ error: e.message });
   }
 });
 
