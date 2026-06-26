@@ -338,8 +338,7 @@
 
     // ---- Avatar overlay ----
     let avatarOverlay = null;
-    let heygenSessionId = null;
-    let avatarSpeaking = false;
+    let avatarSession = null; // LiveAvatarSession instance
     let avatarReady = false;
 
     if (heygenEnabled) {
@@ -362,63 +361,57 @@
         avFooter
       );
 
-      // Avatar send logic
+      // Avatar send logic — gets LLM reply, then sends to avatar SDK
       async function avatarSend(text) {
-        if (!text.trim() || avatarSpeaking) return;
+        if (!text.trim() || !avatarReady || !avatarSession) return;
         avInput.value = '';
         avSend.disabled = true;
-        avatarSpeaking = true;
-        avStatus.innerHTML = '<span class="sx-av-dots"><span></span><span></span><span></span></span>';
+        avatarStatus('🧠 Réflexion…');
         try {
           await ensureConversation();
-          const resp = await fetch(`${baseUrl}/api/public/bots/${botId}/heygen/talk`, {
+
+          // Get LLM reply as plain JSON (no SSE)
+          const resp = await fetch(`${baseUrl}/api/public/bots/${botId}/heygen/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ conversationId, message: text, sessionId: heygenSessionId }),
+            body: JSON.stringify({ conversationId, message: text }),
           });
-          if (!resp.ok || !resp.body) throw new Error('talk_failed');
-          // Read SSE stream to persistence happens on server side
-          const reader = resp.body.getReader();
-          const decoder = new TextDecoder();
-          let buf = '';
-          while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
-            buf += decoder.decode(value, { stream: true });
-            const lines = buf.split('\n');
-            buf = lines.pop();
-            for (const line of lines) {
-              if (!line.startsWith('data:')) continue;
-              const payload = line.slice(5).trim();
-              if (!payload) continue;
-              try {
-                const obj = JSON.parse(payload);
-                if (obj.event === 'avatar_done') {
-                  avStatus.textContent = '✔ Réponse terminée';
-                } else if (obj.event === 'llm_start') {
-                  avStatus.textContent = 'Réflexion…';
-                } else if (obj.event === 'avatar_start') {
-                  avStatus.textContent = '🎙 Lumia parle…';
-                } else if (obj.event === 'avatar_error') {
-                  avStatus.textContent = '⚠ Erreur avatar, réessayez';
-                } else if (obj.event === 'done') {
-                  avatarSpeaking = false;
-                  avSend.disabled = false;
-                  avInput.focus();
-                  avStatus.textContent = 'Appuyez sur Entrée pour parler à Lumia';
-                }
-              } catch {}
+          if (!resp.ok) {
+            const errBody = await resp.json().catch(() => ({}));
+            // If session expired, the client can re-init
+            if (resp.status === 400 && errBody.action === 'restart') {
+              avatarStatus('⚠ Session expirée, rechargez l\'avatar');
+              return;
             }
+            throw new Error(errBody.error || 'chat_failed');
+          }
+          const data = await resp.json();
+          const reply = data.reply || '';
+
+          if (reply.trim()) {
+            avatarStatus('🎙 Lumia parle…');
+            // Send the text to the avatar SDK via the message() method
+            avatarSession.message(reply);
+          } else {
+            avatarStatus('✔ Pas de réponse');
           }
         } catch (e) {
-          avStatus.textContent = '⚠ Erreur, réessayez';
+          console.error('[avatar] send error:', e);
+          avatarStatus('⚠ Erreur, réessayez');
         } finally {
           avatarSpeaking = false;
           avSend.disabled = false;
           setTimeout(() => {
-            if (!avatarSpeaking) avStatus.textContent = 'Appuyez sur Entrée pour parler à Lumia';
+            if (!avatarSpeaking && avatarReady) avatarStatus('Appuyez sur Entrée pour parler à Lumia');
           }, 1500);
         }
+      }
+
+      // Track whether avatar is currently speaking (for status display)
+      let avatarSpeaking = false;
+
+      function avatarStatus(msg) {
+        avStatus.textContent = msg;
       }
 
       avBack.addEventListener('click', closeAvatarMode);
@@ -432,16 +425,76 @@
       if (!avatarOverlay) return;
       avatarOverlay.classList.add('sx-open');
       avatarBtn.classList.add('sx-active');
-      const avInput = avatarOverlay.querySelector('.sx-av-input');
-      setTimeout(() => avInput?.focus(), 100);
-      // Start HeyGen session
-      fetch(`${baseUrl}/api/public/bots/${botId}/heygen/start`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-      }).then(r => r.json()).then(d => {
-        heygenSessionId = d.sessionId;
-        toast('🎭 Lumia est prêt !');
-      }).catch(() => {
-        toast('Erreur avatar', false);
+      const avInputEl = avatarOverlay.querySelector('.sx-av-input');
+      setTimeout(() => avInputEl?.focus(), 100);
+      avatarStatus('🚀 Connexion…');
+
+      // 1. Load the HeyGen SDK dynamically
+      loadHeyGenSDK().then(() => {
+        // 2. Get token from our backend
+        return fetch(`${baseUrl}/api/public/bots/${botId}/heygen/start`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+        });
+      }).then(r => r.json()).then(data => {
+        const token = data.token;
+        if (!token) throw new Error('no_token');
+
+        // 3. Create and start LiveAvatar session
+        avatarReady = false;
+        const LiveAvatarSessionClass = window.LiveAvatarSDK.LiveAvatarSession;
+        avatarSession = new LiveAvatarSessionClass(token);
+
+        // Listen for stream ready — attach video
+        avatarSession.on('session.stream_ready', () => {
+          const videoEl = avatarOverlay.querySelector('.sx-av-video video');
+          if (videoEl) {
+            avatarSession.attach(videoEl);
+            videoEl.play().catch(() => {});
+          }
+          avatarReady = true;
+          avatarStatus('🎭 Lumia est prêt !');
+          setTimeout(() => avatarStatus('Appuyez sur Entrée pour parler à Lumia'), 2000);
+        });
+
+        // Avatar speak events
+        avatarSession.on('avatar.speak_started', () => {
+          avatarSpeaking = true;
+          avatarStatus('🎙 Lumia parle…');
+        });
+        avatarSession.on('avatar.speak_ended', () => {
+          avatarSpeaking = false;
+          avatarStatus('Appuyez sur Entrée pour parler à Lumia');
+        });
+
+        // State changes
+        avatarSession.on('session.state_changed', (state) => {
+          if (state === 'CONNECTING') {
+            avatarStatus('🚀 Connexion…');
+          } else if (state === 'CONNECTED') {
+            avatarStatus('🔄 Préparation…');
+          } else if (state === 'DISCONNECTED') {
+            avatarStatus('🔌 Déconnecté');
+            avatarReady = false;
+            avatarSession = null;
+          }
+        });
+
+        // Error handling
+        avatarSession.on('session.disconnected', () => {
+          avatarStatus('🔌 Session terminée');
+          avatarReady = false;
+          avatarSession = null;
+        });
+
+        // Start the session
+        avatarSession.start().catch((err) => {
+          console.error('[avatar] session start error:', err);
+          avatarStatus('⚠ Erreur de connexion');
+          avatarReady = false;
+        });
+      }).catch((err) => {
+        console.error('[avatar] init error:', err);
+        avatarStatus('⚠ Erreur, réessayez');
       });
     }
 
@@ -449,11 +502,37 @@
       if (!avatarOverlay) return;
       avatarOverlay.classList.remove('sx-open');
       avatarBtn.classList.remove('sx-active');
-      heygenSessionId = null;
+      avatarReady = false;
+      if (avatarSession) {
+        try {
+          avatarSession.stop().catch(() => {});
+        } catch (e) {
+          // Ignore errors on stop
+        }
+        avatarSession = null;
+      }
       fetch(`${baseUrl}/api/public/bots/${botId}/heygen/stop`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
       }).catch(() => {});
       setTimeout(() => input.focus(), 100);
+    }
+
+    // Load the HeyGen LiveAvatar SDK UMD bundle dynamically
+    let sdkLoadPromise = null;
+    function loadHeyGenSDK() {
+      if (window.LiveAvatarSDK && window.LiveAvatarSDK.LiveAvatarSession) {
+        return Promise.resolve();
+      }
+      if (sdkLoadPromise) return sdkLoadPromise;
+      sdkLoadPromise = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = `${baseUrl}/vendor/heygen-liveavatar-sdk.js`;
+        script.async = true;
+        script.onload = resolve;
+        script.onerror = () => reject(new Error('SDK load failed'));
+        document.head.appendChild(script);
+      });
+      return sdkLoadPromise;
     }
 
     if (avatarBtn) {

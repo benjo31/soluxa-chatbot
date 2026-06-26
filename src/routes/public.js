@@ -3,14 +3,10 @@ import { nanoid } from 'nanoid';
 import { sb } from '../db.js';
 import { getBot, chatStream, persistMessages } from '../chat.js';
 import { detectLeadIntent, createLead, sendNotification } from '../leads.js';
-import { startStream, speak, stopStream, getHeyGenConfig } from '../heygen.js';
-import { decryptSecret, encryptSecret } from '../crypto.js';
+import { getStreamToken, getHeyGenConfig } from '../heygen.js';
+import { decryptSecret } from '../crypto.js';
 
 export const publicRouter = express.Router();
-
-// === Streaming sessions cache (in-memory) ===
-// Maps: botId -> { sessionId, apiKey, expiresAt }
-const streamingSessions = new Map();
 
 // CORS dynamique selon allowed_origins du bot
 function applyCors(req, res, bot) {
@@ -174,6 +170,8 @@ publicRouter.post('/bots/:id/lead', async (req, res) => {
 /**
  * Start a HeyGen streaming session for a bot
  * POST /api/public/bots/:id/heygen/start
+ * 
+ * Returns a session token that the client SDK uses to connect via WebRTC.
  */
 publicRouter.post('/bots/:id/heygen/start', async (req, res) => {
   const bot = await getBot(req.params.id);
@@ -192,20 +190,10 @@ publicRouter.post('/bots/:id/heygen/start', async (req, res) => {
   }
 
   try {
-    const session = await startStream(apiKey, heygen.avatarId, heygen.voiceId);
-    const sessionId = session.data?.session_id;
-
-    // Cache la session pour 30 minutes
-    streamingSessions.set(bot.id, {
-      sessionId,
-      apiKey,
-      expiresAt: Date.now() + 30 * 60 * 1000,
-    });
-
+    const tokenData = await getStreamToken(apiKey);
     res.json({
-      sessionId,
-      url: session.data?.url, // WebSocket URL for the client
-      token: session.data?.token,
+      token: tokenData.token,
+      sessionId: tokenData.session_id,
     });
   } catch (e) {
     console.error('[heygen/start] error:', e);
@@ -214,16 +202,16 @@ publicRouter.post('/bots/:id/heygen/start', async (req, res) => {
 });
 
 /**
- * Send a message to the avatar for it to speak
- * POST /api/public/bots/:id/heygen/talk
+ * Chat via l'avatar (mode HeyGen)
+ * POST /api/public/bots/:id/heygen/chat
  * Body: { conversationId, message }
  * 
  * This endpoint:
- * 1. Gets the LLM response (same as /chat)
- * 2. Sends it to HeyGen for the avatar to speak
- * 3. Returns SSE with both text and avatar status
+ * 1. Gets LLM response (synchrone, pas SSE)
+ * 2. Persists messages
+ * 3. Returns { reply: "..." } for the client to send to the avatar SDK
  */
-publicRouter.post('/bots/:id/heygen/talk', async (req, res) => {
+publicRouter.post('/bots/:id/heygen/chat', async (req, res) => {
   const bot = await getBot(req.params.id);
   if (!bot) return res.status(404).json({ error: 'not_found' });
   applyCors(req, res, bot);
@@ -233,27 +221,8 @@ publicRouter.post('/bots/:id/heygen/talk', async (req, res) => {
     return res.status(400).json({ error: 'heygen_not_enabled' });
   }
 
-  const { conversationId, message, sessionId: clientSessionId } = req.body || {};
+  const { conversationId, message } = req.body || {};
   if (!conversationId || !message) return res.status(400).json({ error: 'missing_fields' });
-
-  // Récupérer la session — soit du client, soit du cache serveur
-  let session = clientSessionId ? { sessionId: clientSessionId } : streamingSessions.get(bot.id);
-
-  // Si pas de session, essayer d'en créer une
-  if (!session) {
-    return res.status(400).json({ error: 'heygen_session_expired', action: 'restart' });
-  }
-
-  // Si on a la sessionId mais pas l'apiKey, la chercher
-  if (!session.apiKey) {
-    const cached = streamingSessions.get(bot.id);
-    if (cached) {
-      session.apiKey = cached.apiKey;
-    } else {
-      // Need to re-auth
-      return res.status(400).json({ error: 'heygen_session_expired', action: 'restart' });
-    }
-  }
 
   const { data: conv, error: convErr } = await sb
     .from('conversations')
@@ -263,62 +232,34 @@ publicRouter.post('/bots/:id/heygen/talk', async (req, res) => {
     .maybeSingle();
   if (convErr || !conv) return res.status(404).json({ error: 'conversation_not_found' });
 
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache, no-transform');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
-  res.flushHeaders?.();
-
   let full = '';
   try {
-    // Step 1: Get LLM response text (streaming)
-    res.write(`data: ${JSON.stringify({ event: 'llm_start' })}\n\n`);
-
     for await (const chunk of chatStream({ bot, conversationId, userMessage: message })) {
       full += chunk;
-      res.write(`data: ${JSON.stringify({ delta: chunk })}\n\n`);
-    }
-
-    res.write(`data: ${JSON.stringify({ event: 'llm_done' })}\n\n`);
-
-    // Step 2: Send to HeyGen avatar to speak
-    if (full.trim()) {
-      res.write(`data: ${JSON.stringify({ event: 'avatar_start' })}\n\n`);
-      try {
-        await speak(session.apiKey, session.sessionId, full);
-        res.write(`data: ${JSON.stringify({ event: 'avatar_done' })}\n\n`);
-      } catch (e) {
-        console.error('[heygen/talk] speak error:', e);
-        res.write(`data: ${JSON.stringify({ event: 'avatar_error', error: e.message })}\n\n`);
-      }
     }
   } catch (e) {
-    console.error('[heygen/talk] error', e);
-    res.write(`data: ${JSON.stringify({ delta: 'Erreur serveur.' })}\n\n`);
+    console.error('[heygen/chat] error', e);
+    return res.status(500).json({ error: 'llm_error', reply: 'Erreur lors de la génération de la réponse.' });
   }
 
   await persistMessages(conversationId, message, full);
 
-  // Détection lead
+  // Détection lead (optionnel — le client texte gère déjà les leads)
+  let suggestLead = null;
   if (bot.lead_capture_enabled) {
     const intent = detectLeadIntent(message, full);
     if (intent.suggestForm) {
-      res.write(`data: ${JSON.stringify({ event: 'suggest_lead', email: intent.email, phone: intent.phone })}\n\n`);
+      suggestLead = { email: intent.email, phone: intent.phone };
     }
   }
 
-  res.write(`data: ${JSON.stringify({ event: 'done' })}\n\n`);
-  res.end();
+  res.json({ reply: full, suggestLead });
 });
 
 /**
  * Stop HeyGen streaming session
+ * (Le client SDK gère la fermeture côté client, ceci est un endpoint de sécurité)
  */
 publicRouter.post('/bots/:id/heygen/stop', async (req, res) => {
-  const session = streamingSessions.get(req.params.botId);
-  if (session) {
-    await stopStream(session.apiKey, session.sessionId).catch(() => {});
-    streamingSessions.delete(req.params.botId);
-  }
   res.json({ ok: true });
 });

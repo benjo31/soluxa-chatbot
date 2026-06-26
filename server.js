@@ -34,6 +34,13 @@ app.get('/widget.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'widget.js'));
 });
 
+// HeyGen LiveAvatar Web SDK (servi statiquement pour le widget)
+app.get('/vendor/heygen-liveavatar-sdk.js', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.sendFile(path.join(__dirname, 'node_modules/@heygen/liveavatar-web-sdk/dist/index.umd.js'));
+});
+
 // Dashboard admin
 app.use('/admin', express.static(path.join(__dirname, 'admin')));
 app.get('/admin', (req, res) => res.redirect('/admin/'));
