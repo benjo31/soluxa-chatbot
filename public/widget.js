@@ -462,10 +462,13 @@
       // 1. Load the HeyGen SDK dynamically
       loadHeyGenSDK().then(() => {
         console.log('[avatar] SDK loaded, fetching token...');
-        // 2. Get token from our backend
+        // 2. Get token from our backend — with a 30s timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
         return fetch(`${baseUrl}/api/public/bots/${botId}/heygen/start`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-        });
+          signal: controller.signal,
+        }).finally(() => clearTimeout(timeoutId));
       }).then(r => {
         console.log('[avatar] token response status:', r.status);
         return r.text().then(text => {
