@@ -432,14 +432,20 @@
       const avInputEl = avatarOverlay.querySelector('.sx-av-input');
       setTimeout(() => avInputEl?.focus(), 100);
       avatarStatus('🚀 Connexion…');
+      console.log('[avatar] openAvatarMode called, loading SDK...');
 
       // 1. Load the HeyGen SDK dynamically
       loadHeyGenSDK().then(() => {
+        console.log('[avatar] SDK loaded, fetching token...');
         // 2. Get token from our backend
         return fetch(`${baseUrl}/api/public/bots/${botId}/heygen/start`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
         });
-      }).then(r => r.json()).then(data => {
+      }).then(r => {
+        console.log('[avatar] token response status:', r.status);
+        return r.json();
+      }).then(data => {
+        console.log('[avatar] token data:', JSON.stringify(data));
         const token = data.session_token || data.token;
         if (!token) throw new Error('no_token');
 
@@ -447,9 +453,11 @@
         avatarReady = false;
         const LiveAvatarSessionClass = window.LiveAvatarSDK.LiveAvatarSession;
         avatarSession = new LiveAvatarSessionClass(token);
+        console.log('[avatar] LiveAvatarSession created');
 
         // Listen for stream ready — attach video
         avatarSession.on('session.stream_ready', () => {
+          console.log('[avatar] stream_ready event fired');
           const videoEl = avatarOverlay.querySelector('.sx-av-video video');
           if (videoEl) {
             avatarSession.attach(videoEl);
@@ -492,13 +500,13 @@
 
         // Start the session
         avatarSession.start().catch((err) => {
-          console.error('[avatar] session start error:', err);
-          avatarStatus('⚠ Erreur: ' + (err.message || 'connexion'));
+          console.error('[avatar] session start error:', err, 'message:', err.message, 'stack:', err.stack);
+          avatarStatus('⚠ ' + (err.message || 'Erreur de connexion'));
           avatarReady = false;
         });
       }).catch((err) => {
-        console.error('[avatar] init error:', err);
-        avatarStatus('⚠ Erreur: ' + (err.message || 'initialisation'));
+        console.error('[avatar] init error:', err, 'message:', err.message, 'stack:', err.stack);
+        avatarStatus('⚠ ' + (err.message || 'Erreur initialisation'));
       });
     }
 
