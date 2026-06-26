@@ -468,11 +468,14 @@
         });
       }).then(r => {
         console.log('[avatar] token response status:', r.status);
+        if (!r.ok) {
+          return r.json().then(body => { throw new Error('HTTP ' + r.status + ': ' + (body.error || body.detail || JSON.stringify(body))); });
+        }
         return r.json();
       }).then(data => {
         console.log('[avatar] token data:', JSON.stringify(data));
         const token = data.session_token || data.token;
-        if (!token) throw new Error('no_token');
+        if (!token) throw new Error('no_token: field missing from response');
 
         // 3. Create and start LiveAvatar session
         avatarReady = false;
