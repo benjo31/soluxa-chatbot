@@ -474,11 +474,11 @@
       avInput.value = '';
       if (avSend) avSend.disabled = true;
       avatarStatus('🧠 Réflexion…');
+      let lastError = '';
       try {
         console.log('[avatar] sending:', text);
         await ensureConversation();
 
-        // Get LLM reply as plain JSON (no SSE)
         console.log('[avatar] fetching /heygen/chat with convId:', conversationId);
         const resp = await fetch(`${baseUrl}/api/public/bots/${botId}/heygen/chat`, {
           method: 'POST',
@@ -489,7 +489,7 @@
         if (!resp.ok) {
           const errBody = await resp.json().catch(() => ({}));
           console.error('[avatar] /heygen/chat error body:', errBody);
-          // If session expired, the client can re-init
+          lastError = 'chat_status_' + resp.status;
           if (resp.status === 400 && errBody.action === 'restart') {
             avatarStatus("⚠ Session expirée, rechargez l'avatar");
             return;
@@ -498,19 +498,35 @@
         }
         const data = await resp.json();
         const reply = data.reply || '';
-        console.log('[avatar] LLM reply length:', reply.length);
+        console.log('[avatar] LLM reply length:', reply.length, 'reply:', reply.substring(0, 100));
 
         if (reply.trim()) {
           avatarStatus('🎙 Lumia parle…');
           console.log('[avatar] sending message to avatar SDK...');
-          // Send the text to the avatar SDK via the message() method
-          await avatarSession.message(reply);
-          console.log('[avatar] avatar SDK message() completed successfully');
+          try {
+            const msgResult = avatarSession.message(reply);
+            // Handle both sync and Promise returns
+            if (msgResult && typeof msgResult.then === 'function') {
+              await msgResult;
+            }
+            console.log('[avatar] avatar SDK message() completed successfully');
+          } catch (sdkErr) {
+            lastError = 'sdk_message:' + (sdkErr.message || sdkErr);
+            console.error('[avatar] SDK message() threw:', sdkErr, 'message:', sdkErr?.message, 'stack:', sdkErr?.stack);
+            throw sdkErr;
+          }
         } else {
           avatarStatus('✔ Pas de réponse');
         }
       } catch (e) {
-        console.error('[avatar] send error:', e, 'message:', e.message, 'stack:', e.stack);
+        const errStr = e?.message || String(e);
+        console.error('[avatar] send error:', e, 'message:', e?.message, 'stack:', e?.stack);
+        // Show error code in debug element
+        const errEl = document.createElement('div');
+        errEl.style.cssText = 'position:fixed;bottom:0;left:0;background:red;color:white;font-size:11px;padding:4px;z-index:99999;max-width:100%;word-break:break-all';
+        errEl.textContent = 'AvatarErr: ' + errStr + ' | ' + lastError;
+        document.body.appendChild(errEl);
+        setTimeout(() => errEl.remove(), 10000);
         avatarStatus('⚠ Erreur, réessayez');
       } finally {
         avatarSpeaking = false;
