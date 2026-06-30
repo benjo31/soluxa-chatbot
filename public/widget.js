@@ -230,13 +230,43 @@
 
       /* Avatar toggle button in footer */
       .sx-avatar-btn {
-        background: rgba(0,0,0,0.04); color: ${text};
-        border: 1px solid rgba(0,0,0,0.08); border-radius: 10px;
-        padding: 0 10px; cursor: pointer; font-size: 14px; font-weight: 500;
-        white-space: nowrap; font-family: ${font};
-        transition: all 0.15s ease;
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 0;
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        position: relative;
+        flex-shrink: 0;
       }
-      .sx-avatar-btn:hover { background: rgba(0,0,0,0.07); }
+      .sx-avatar-btn img {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        object-fit: cover;
+        display: block;
+      }
+      /* Pulsing glow ring */
+      .sx-avatar-btn::after {
+        content: '';
+        position: absolute;
+        inset: -3px;
+        border-radius: 50%;
+        border: 2px solid ${accent};
+        opacity: 0.6;
+        animation: sxPulse 2s ease-in-out infinite;
+      }
+      .sx-avatar-btn.sx-active::after {
+        border-color: ${accent};
+        opacity: 1;
+        animation: sxPulse 1s ease-in-out infinite;
+      }
+      @keyframes sxPulse {
+        0%, 100% { transform: scale(1); opacity: 0.4; }
+        50% { transform: scale(1.08); opacity: 0.9; }
+      }
+      .sx-avatar-btn:hover { filter: brightness(1.1); }
 
       /* Avatar overlay - full panel takeover */
       .sx-avatar-overlay {
@@ -400,10 +430,8 @@
     const sendBtn = h('button', { class: 'sx-send' }, 'Envoyer');
 
     // Avatar button (visible only if enabled)
-    const avatarPreviewUrl = config.heygenAvatarPreview;
-    const avatarBtnContent = avatarPreviewUrl
-      ? h('img', { src: avatarPreviewUrl, style: 'width:22px;height:22px;border-radius:11px;object-fit:cover;vertical-align:middle;margin-right:4px' })
-      : '🎭';
+    const AVATAR_PREVIEW_URL = 'https://files2.heygen.ai/avatar/v3/74447a27859a456c955e01f21ef18216_45620/preview_talk_1.webp';
+    const avatarBtnContent = h('img', { src: AVATAR_PREVIEW_URL, alt: 'Lumia' });
     const avatarBtn = heygenEnabled
       ? h('button', { class: 'sx-avatar-btn', title: 'Mode avatar' }, avatarBtnContent)
       : null;
