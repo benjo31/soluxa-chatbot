@@ -203,7 +203,7 @@ publicRouter.post('/bots/:id/heygen/start', async (req, res) => {
         try {
           const avatarId = heygen.avatarId || config.liveavatarAvatarId || '65f9e3c9-d48b-4118-b73a-4ae2e3cbb8f0';
           console.log('[heygen/start] calling createSessionToken with avatarId:', avatarId);
-          const tokenData = await createSessionToken(config.liveavatarApiKey, avatarId, heygen.mode || 'LITE');
+          const tokenData = await createSessionToken(config.liveavatarApiKey, avatarId, 'FULL', heygen.voiceId || null);
           console.log('[heygen/start] success, session:', tokenData.session_id);
           return res.json({ token: tokenData.session_token, sessionId: tokenData.session_id });
         } catch (e) {
@@ -215,8 +215,8 @@ publicRouter.post('/bots/:id/heygen/start', async (req, res) => {
     }
 
     try {
-      const mode = heygen.mode || 'LITE';
-      const tokenData = await createSessionToken(apiKey, heygen.avatarId, mode);
+      const mode = 'FULL';
+      const tokenData = await createSessionToken(apiKey, heygen.avatarId, mode, heygen.voiceId || null);
       res.json({
         token: tokenData.session_token,
         sessionId: tokenData.session_id,

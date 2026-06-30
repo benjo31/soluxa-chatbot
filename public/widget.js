@@ -467,10 +467,12 @@
       });
     }
 
-    // Avatar send logic — gets LLM reply, then shows it as text under video
+    // Avatar send logic — gets LLM reply, then sends to avatar SDK
     async function avatarSend(text) {
       if (!text.trim()) return;
       if (!avInput) return;
+      if (!avatarReady) { console.warn('[avatar] avatarSend blocked: avatar not ready'); avatarStatus('⚠ Avatar pas prêt'); return; }
+      if (!avatarSession) { console.warn('[avatar] avatarSend blocked: no session'); avatarStatus('⚠ Pas de session'); return; }
       avInput.value = '';
       if (avSend) avSend.disabled = true;
       avatarStatus('🧠 Réflexion…');
@@ -478,16 +480,13 @@
         console.log('[avatar] sending:', text);
         await ensureConversation();
 
-        console.log('[avatar] fetching /heygen/chat with convId:', conversationId);
         const resp = await fetch(`${baseUrl}/api/public/bots/${botId}/heygen/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ conversationId, message: text }),
         });
-        console.log('[avatar] /heygen/chat response status:', resp.status);
         if (!resp.ok) {
           const errBody = await resp.json().catch(() => ({}));
-          console.error('[avatar] /heygen/chat error body:', errBody);
           if (resp.status === 400 && errBody.action === 'restart') {
             avatarStatus("⚠ Session expirée, rechargez l'avatar");
             return;
@@ -496,15 +495,10 @@
         }
         const data = await resp.json();
         const reply = data.reply || '';
-        console.log('[avatar] LLM reply length:', reply.length);
 
         if (reply.trim()) {
-          // Show the text reply in a speech bubble above the status bar
-          avatarStatus('💬 ' + reply);
-          // Auto clear after a while
-          setTimeout(() => {
-            if (!avatarSpeaking) avatarStatus('Appuyez sur Entrée pour parler à Lumia');
-          }, 8000);
+          avatarStatus('🎙 Lumia parle…');
+          await avatarSession.message(reply);
         } else {
           avatarStatus('✔ Pas de réponse');
         }

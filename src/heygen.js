@@ -17,7 +17,7 @@ const LIVEAVATAR_API_BASE = 'https://api.liveavatar.com';
  * POST /v1/sessions/token
  * Returns: { session_id, session_token }
  */
-export async function createSessionToken(apiKey, avatarId, mode = 'LITE') {
+export async function createSessionToken(apiKey, avatarId, mode = 'LITE', voiceId = null) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout
 
@@ -28,7 +28,15 @@ export async function createSessionToken(apiKey, avatarId, mode = 'LITE') {
       is_sandbox: false,
     };
     if (mode === 'FULL') {
-      reqBody.avatar_persona = { avatar_id: avatarId };
+      reqBody.avatar_persona = {
+        avatar_id: avatarId,
+      };
+      if (voiceId) {
+        reqBody.avatar_persona.voice_id = voiceId;
+      } else {
+        // Default voice: Camila Vega - Friendly (multilingual, French-capable)
+        reqBody.avatar_persona.voice_id = 'ca41b663-8178-429c-bf68-b0c4ce3b0ad0';
+      }
     }
     const res = await fetch(`${LIVEAVATAR_API_BASE}/v1/sessions/token`, {
       method: 'POST',
