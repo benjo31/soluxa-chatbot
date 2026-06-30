@@ -6,6 +6,7 @@ import { config } from './src/config.js';
 import './src/db.js'; // init DB
 import { publicRouter } from './src/routes/public.js';
 import { adminRouter } from './src/routes/admin.js';
+import { diagRouter } from './src/routes/diag.js';
 
 // ---- Process-level crash prevention ----
 // Node 20+ exits the process on unhandled rejections by default.
@@ -26,6 +27,7 @@ app.use(cookieParser());
 // API
 app.use('/api/public', publicRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api', diagRouter);
 
 // Widget statique (avec en-têtes CORS permissifs car appelé depuis n'importe quel site)
 app.get('/widget.js', (req, res) => {
