@@ -5,6 +5,7 @@ import { getBot, chatStream, persistMessages } from '../chat.js';
 import { detectLeadIntent, createLead, sendNotification } from '../leads.js';
 import { createSessionToken, getHeyGenConfig } from '../heygen.js';
 import { decryptSecret } from '../crypto.js';
+import { config } from '../config.js';
 
 export const publicRouter = express.Router();
 
