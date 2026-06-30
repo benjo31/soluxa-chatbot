@@ -18,27 +18,38 @@ const LIVEAVATAR_API_BASE = 'https://api.liveavatar.com';
  * Returns: { session_id, session_token }
  */
 export async function createSessionToken(apiKey, avatarId, mode = 'LITE') {
-  const res = await fetch(`${LIVEAVATAR_API_BASE}/v1/sessions/token`, {
-    method: 'POST',
-    headers: {
-      'X-API-KEY': apiKey,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      avatar_id: avatarId,
-      mode,
-      is_sandbox: false,
-    }),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`LiveAvatar token request failed: ${text}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout
+
+  try {
+    const res = await fetch(`${LIVEAVATAR_API_BASE}/v1/sessions/token`, {
+      method: 'POST',
+      headers: {
+        'X-API-KEY': apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        avatar_id: avatarId,
+        mode,
+        is_sandbox: false,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`LiveAvatar token request failed: ${text}`);
+    }
+    const json = await res.json();
+    if (json.code !== 1000) {
+      throw new Error(`LiveAvatar API error: ${json.message || 'unknown'}`);
+    }
+    return json.data; // { session_id, session_token }
+  } catch (e) {
+    clearTimeout(timeout);
+    throw e;
   }
-  const json = await res.json();
-  if (json.code !== 1000) {
-    throw new Error(`LiveAvatar API error: ${json.message || 'unknown'}`);
-  }
-  return json.data; // { session_id, session_token }
 }
 
 /**
