@@ -31,7 +31,9 @@ export async function createSessionToken(apiKey, avatarId, mode = 'LITE', voiceI
       reqBody.avatar_persona = {
         avatar_id: avatarId,
       };
-      if (voiceId) {
+      // Use a valid UUID voice ID; ignore HeyGen-style non-UUID IDs
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (voiceId && UUID_RE.test(voiceId)) {
         reqBody.avatar_persona.voice_id = voiceId;
       } else {
         // Default voice: Camila Vega - Friendly (multilingual, French-capable)
