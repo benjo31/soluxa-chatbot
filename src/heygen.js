@@ -36,9 +36,8 @@ export async function createSessionToken(apiKey, avatarId, mode = 'LITE', voiceI
       if (voiceId && UUID_RE.test(voiceId)) {
         reqBody.avatar_persona.voice_id = voiceId;
       } else {
-        // Default voice: voix clonée personnalisée (français/suisse)
-        // Fallback si la voix clonée n'est pas dispo: ca41b663-8178-429c-bf68-b0c4ce3b0ad0
-        reqBody.avatar_persona.voice_id = '5d205051-edec-4033-ab40-2a85f7e2a815';
+        // Default voice: Elenora - Professional (meilleur accent français)
+        reqBody.avatar_persona.voice_id = '254ffe1e-c89f-430f-8c36-9e7611d310c0';
       }
     }
     const res = await fetch(`${LIVEAVATAR_API_BASE}/v1/sessions/token`, {
