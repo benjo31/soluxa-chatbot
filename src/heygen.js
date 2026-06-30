@@ -22,17 +22,21 @@ export async function createSessionToken(apiKey, avatarId, mode = 'LITE') {
   const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout
 
   try {
+    const reqBody = {
+      avatar_id: avatarId,
+      mode,
+      is_sandbox: false,
+    };
+    if (mode === 'FULL') {
+      reqBody.avatar_persona = { avatar_id: avatarId };
+    }
     const res = await fetch(`${LIVEAVATAR_API_BASE}/v1/sessions/token`, {
       method: 'POST',
       headers: {
         'X-API-KEY': apiKey,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        avatar_id: avatarId,
-        mode,
-        is_sandbox: false,
-      }),
+      body: JSON.stringify(reqBody),
       signal: controller.signal,
     });
     clearTimeout(timeout);

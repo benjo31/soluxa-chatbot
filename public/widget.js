@@ -277,6 +277,8 @@
         padding: 0 16px 8px;
         min-height: 20px;
         font-size: 12px; color: rgba(255,255,255,0.35);
+        max-height: 80px; overflow-y: auto; word-break: break-word;
+        line-height: 1.4;
       }
       .sx-avatar-overlay .sx-av-status .sx-av-dots span {
         display: inline-block; width: 5px; height: 5px;
@@ -465,16 +467,13 @@
       });
     }
 
-    // Avatar send logic — gets LLM reply, then sends to avatar SDK
+    // Avatar send logic — gets LLM reply, then shows it as text under video
     async function avatarSend(text) {
       if (!text.trim()) return;
       if (!avInput) return;
-      if (!avatarReady) { console.warn('[avatar] avatarSend blocked: avatar not ready'); avatarStatus('⚠ Avatar pas prêt'); return; }
-      if (!avatarSession) { console.warn('[avatar] avatarSend blocked: no session'); avatarStatus('⚠ Pas de session'); return; }
       avInput.value = '';
       if (avSend) avSend.disabled = true;
       avatarStatus('🧠 Réflexion…');
-      let lastError = '';
       try {
         console.log('[avatar] sending:', text);
         await ensureConversation();
@@ -489,7 +488,6 @@
         if (!resp.ok) {
           const errBody = await resp.json().catch(() => ({}));
           console.error('[avatar] /heygen/chat error body:', errBody);
-          lastError = 'chat_status_' + resp.status;
           if (resp.status === 400 && errBody.action === 'restart') {
             avatarStatus("⚠ Session expirée, rechargez l'avatar");
             return;
@@ -498,35 +496,20 @@
         }
         const data = await resp.json();
         const reply = data.reply || '';
-        console.log('[avatar] LLM reply length:', reply.length, 'reply:', reply.substring(0, 100));
+        console.log('[avatar] LLM reply length:', reply.length);
 
         if (reply.trim()) {
-          avatarStatus('🎙 Lumia parle…');
-          console.log('[avatar] sending message to avatar SDK...');
-          try {
-            const msgResult = avatarSession.message(reply);
-            // Handle both sync and Promise returns
-            if (msgResult && typeof msgResult.then === 'function') {
-              await msgResult;
-            }
-            console.log('[avatar] avatar SDK message() completed successfully');
-          } catch (sdkErr) {
-            lastError = 'sdk_message:' + (sdkErr.message || sdkErr);
-            console.error('[avatar] SDK message() threw:', sdkErr, 'message:', sdkErr?.message, 'stack:', sdkErr?.stack);
-            throw sdkErr;
-          }
+          // Show the text reply in a speech bubble above the status bar
+          avatarStatus('💬 ' + reply);
+          // Auto clear after a while
+          setTimeout(() => {
+            if (!avatarSpeaking) avatarStatus('Appuyez sur Entrée pour parler à Lumia');
+          }, 8000);
         } else {
           avatarStatus('✔ Pas de réponse');
         }
       } catch (e) {
-        const errStr = e?.message || String(e);
         console.error('[avatar] send error:', e, 'message:', e?.message, 'stack:', e?.stack);
-        // Show error code in debug element
-        const errEl = document.createElement('div');
-        errEl.style.cssText = 'position:fixed;bottom:0;left:0;background:red;color:white;font-size:11px;padding:4px;z-index:99999;max-width:100%;word-break:break-all';
-        errEl.textContent = 'AvatarErr: ' + errStr + ' | ' + lastError;
-        document.body.appendChild(errEl);
-        setTimeout(() => errEl.remove(), 10000);
         avatarStatus('⚠ Erreur, réessayez');
       } finally {
         avatarSpeaking = false;
