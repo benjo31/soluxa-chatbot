@@ -184,13 +184,23 @@ publicRouter.post('/bots/:id/heygen/start', async (req, res) => {
   }
 
   // Décrypter la clé API LiveAvatar
-  const apiKey = heygen.apiKeyEncrypted ? decryptSecret(heygen.apiKeyEncrypted) : null;
+  let apiKey = null;
+  try {
+    apiKey = heygen.apiKeyEncrypted ? decryptSecret(heygen.apiKeyEncrypted) : null;
+  } catch (e) {
+    // ignore decryption errors
+  }
   if (!apiKey) {
     // Fallback : clé par défaut depuis les variables d'env
     if (config.liveavatarApiKey) {
-      const avatarId = heygen.avatarId || config.liveavatarAvatarId || '65f9e3c9-d48b-4118-b73a-4ae2e3cbb8f0';
-      const tokenData = await createSessionToken(config.liveavatarApiKey, avatarId, heygen.mode || 'LITE');
-      return res.json({ token: tokenData.session_token, sessionId: tokenData.session_id });
+      try {
+        const avatarId = heygen.avatarId || config.liveavatarAvatarId || '65f9e3c9-d48b-4118-b73a-4ae2e3cbb8f0';
+        const tokenData = await createSessionToken(config.liveavatarApiKey, avatarId, heygen.mode || 'LITE');
+        return res.json({ token: tokenData.session_token, sessionId: tokenData.session_id });
+      } catch (e) {
+        console.error('[heygen/start] fallback error:', e);
+        return res.status(500).json({ error: 'heygen_start_failed', detail: e.message });
+      }
     }
     return res.status(400).json({ error: 'heygen_api_key_missing' });
   }
