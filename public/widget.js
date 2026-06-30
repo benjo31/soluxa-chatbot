@@ -40,6 +40,79 @@
     return el;
   };
 
+  // -------- Helper: parse les liens et images markdown dans le texte --------
+  function parseContent(text) {
+    const parts = [];
+    const regex = /!\[([^\]]*)\]\(([^)]+)\)|\[([^\]]+)\]\(([^)]+)\)/g;
+    let lastIdx = 0;
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      if (match.index > lastIdx) {
+        parts.push(document.createTextNode(text.slice(lastIdx, match.index)));
+      }
+      if (match[1] !== undefined) {
+        // Image ![alt](url)
+        const img = document.createElement('img');
+        img.src = match[2];
+        img.alt = match[1] || '';
+        Object.assign(img.style, {
+          maxWidth: '100%',
+          borderRadius: '10px',
+          margin: '6px 0',
+          display: 'block',
+        });
+        if (match[2].startsWith('http')) {
+          const wrapper = document.createElement('a');
+          wrapper.href = match[2];
+          wrapper.target = '_blank';
+          wrapper.rel = 'noopener noreferrer';
+          wrapper.style.display = 'block';
+          wrapper.appendChild(img);
+          parts.push(wrapper);
+        } else {
+          parts.push(img);
+        }
+      } else {
+        // Lien [texte](url)
+        const btn = document.createElement('a');
+        btn.href = match[4];
+        btn.target = '_blank';
+        btn.rel = 'noopener noreferrer';
+        btn.textContent = match[3];
+        Object.assign(btn.style, {
+          display: 'inline-block',
+          background: 'var(--title, #62a70f)',
+          color: '#fff',
+          padding: '8px 16px',
+          borderRadius: '8px',
+          textDecoration: 'none',
+          fontWeight: '600',
+          fontSize: '13px',
+          margin: '4px 4px 0 0',
+          cursor: 'pointer',
+        });
+        btn.onmouseenter = () => { btn.style.filter = 'brightness(1.1)'; };
+        btn.onmouseleave = () => { btn.style.filter = 'none'; };
+        parts.push(btn);
+      }
+      lastIdx = match.index + match[0].length;
+    }
+    if (lastIdx < text.length) {
+      parts.push(document.createTextNode(text.slice(lastIdx)));
+    }
+    return parts.length > 0 ? parts : [document.createTextNode(text)];
+  }
+
+  // -------- Helper: render un message avec support des liens/images --------
+  function renderMessage(text, role) {
+    const cls = role === 'user' ? 'sx-msg-user' : 'sx-msg-bot';
+    const el = document.createElement('div');
+    el.className = `sx-msg ${cls}`;
+    const parts = parseContent(text);
+    parts.forEach(p => el.appendChild(p));
+    return el;
+  }
+
   // Simple toast notification
   function toast(msg) {
     const t = document.createElement('div');
@@ -110,6 +183,12 @@
         background: none; border: none; cursor: pointer;
         color: ${text}; font-size: 22px; line-height: 1; padding: 4px 8px;
       }
+      .sx-reset {
+        background: none; border: none; cursor: pointer;
+        color: ${title}; font-size: 18px; line-height: 1; padding: 4px 6px;
+        opacity: 0.6; transition: opacity 0.15s ease;
+      }
+      .sx-reset:hover { opacity: 1; }
 
       .sx-body {
         flex: 1; overflow-y: auto;
@@ -334,9 +413,11 @@
     const footer = h('div', { class: 'sx-footer' }, ...footerChildren);
 
     const closeBtn = h('button', { class: 'sx-close', 'aria-label': 'Fermer' }, '×');
+    const resetBtn = h('button', { class: 'sx-reset', 'aria-label': 'Nouvelle discussion', title: 'Nouvelle discussion' }, '↺');
     const headerEls = [];
     if (brand.logoUrl) headerEls.push(h('img', { class: 'sx-logo', src: brand.logoUrl, alt: config.name || 'Logo' }));
     headerEls.push(h('div', { class: 'sx-title' }, config.name || 'Assistant'));
+    headerEls.push(resetBtn);
     headerEls.push(closeBtn);
     const header = h('div', { class: 'sx-header' }, ...headerEls);
 
@@ -386,41 +467,50 @@
 
     // Avatar send logic — gets LLM reply, then sends to avatar SDK
     async function avatarSend(text) {
-      if (!text.trim() || !avatarReady || !avatarSession) return;
+      if (!text.trim()) return;
       if (!avInput) return;
+      if (!avatarReady) { console.warn('[avatar] avatarSend blocked: avatar not ready'); avatarStatus('⚠ Avatar pas prêt'); return; }
+      if (!avatarSession) { console.warn('[avatar] avatarSend blocked: no session'); avatarStatus('⚠ Pas de session'); return; }
       avInput.value = '';
       if (avSend) avSend.disabled = true;
       avatarStatus('🧠 Réflexion…');
       try {
+        console.log('[avatar] sending:', text);
         await ensureConversation();
 
         // Get LLM reply as plain JSON (no SSE)
+        console.log('[avatar] fetching /heygen/chat with convId:', conversationId);
         const resp = await fetch(`${baseUrl}/api/public/bots/${botId}/heygen/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ conversationId, message: text }),
         });
+        console.log('[avatar] /heygen/chat response status:', resp.status);
         if (!resp.ok) {
           const errBody = await resp.json().catch(() => ({}));
+          console.error('[avatar] /heygen/chat error body:', errBody);
           // If session expired, the client can re-init
           if (resp.status === 400 && errBody.action === 'restart') {
-            avatarStatus('⚠ Session expirée, rechargez l\'avatar');
+            avatarStatus("⚠ Session expirée, rechargez l'avatar");
             return;
           }
           throw new Error(errBody.error || 'chat_failed');
         }
         const data = await resp.json();
         const reply = data.reply || '';
+        console.log('[avatar] LLM reply length:', reply.length);
 
         if (reply.trim()) {
           avatarStatus('🎙 Lumia parle…');
+          console.log('[avatar] sending message to avatar SDK...');
           // Send the text to the avatar SDK via the message() method
-          avatarSession.message(reply);
+          await avatarSession.message(reply);
+          console.log('[avatar] avatar SDK message() completed successfully');
         } else {
           avatarStatus('✔ Pas de réponse');
         }
       } catch (e) {
-        console.error('[avatar] send error:', e);
+        console.error('[avatar] send error:', e, 'message:', e.message, 'stack:', e.stack);
         avatarStatus('⚠ Erreur, réessayez');
       } finally {
         avatarSpeaking = false;
@@ -702,6 +792,24 @@
     launcher.addEventListener('click', openPanel);
     closeBtn.addEventListener('click', closePanel);
 
+    // Reset conversation
+    resetBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      // Effacer les messages du body
+      body.querySelectorAll('.sx-msg, .sx-lead-cta').forEach(m => m.remove());
+      // Réinitialiser l'état
+      conversationId = null;
+      visitorId = null;
+      setStore({});
+      leadSubmitted = false;
+      // Remettre le message de bienvenue
+      if (config.welcome) {
+        body.appendChild(renderMessage(config.welcome, 'bot'));
+      }
+      input.focus();
+      toast('Nouvelle discussion démarrée');
+    });
+
     async function ensureConversation() {
       if (conversationId) return conversationId;
       const r = await fetch(`${baseUrl}/api/public/bots/${botId}/conversation`, {
@@ -761,7 +869,9 @@
       body.appendChild(typing);
       body.scrollTop = body.scrollHeight;
 
-      const botMsg = h('div', { class: 'sx-msg sx-msg-bot' }, '');
+      const botMsg = document.createElement('div');
+      botMsg.className = 'sx-msg sx-msg-bot';
+      let botMsgText = '';
       let botMsgAdded = false;
       let suggestPayload = null;
 
@@ -791,7 +901,8 @@
               const obj = JSON.parse(payload);
               if (obj.delta) {
                 if (!botMsgAdded) { typing.remove(); body.appendChild(botMsg); botMsgAdded = true; }
-                botMsg.textContent += obj.delta;
+                botMsgText += obj.delta;
+                botMsg.textContent = botMsgText;
                 body.scrollTop = body.scrollHeight;
               } else if (obj.event === 'suggest_lead') {
                 suggestPayload = { email: obj.email, phone: obj.phone };
@@ -806,6 +917,16 @@
         if (typing.parentNode) typing.remove();
         sendBtn.disabled = false;
         input.focus();
+
+        // Parser les liens et images dans la réponse complète
+        if (botMsgAdded && botMsgText) {
+          const hasRich = /\[([^\]]+)\]\([^)]+\)/.test(botMsgText) || /!\[([^\]]*)\]\([^)]+\)/.test(botMsgText);
+          if (hasRich) {
+            botMsg.innerHTML = '';
+            const parts = parseContent(botMsgText);
+            parts.forEach(p => botMsg.appendChild(p));
+          }
+        }
 
         if (suggestPayload && config.leadCaptureEnabled && !leadSubmitted) {
           const cta = h('button', { class: 'sx-lead-cta', onclick: () => openLeadModal(suggestPayload) }, 'Être recontacté');
