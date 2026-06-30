@@ -174,47 +174,59 @@ publicRouter.post('/bots/:id/lead', async (req, res) => {
  * Returns a session_token that the client SDK uses to connect via WebRTC.
  */
 publicRouter.post('/bots/:id/heygen/start', async (req, res) => {
-  const bot = await getBot(req.params.id);
-  if (!bot) return res.status(404).json({ error: 'not_found' });
-  applyCors(req, res, bot);
-
-  const heygen = getHeyGenConfig(bot);
-  if (!heygen.enabled) {
-    return res.status(400).json({ error: 'heygen_not_enabled' });
-  }
-
-  // Décrypter la clé API LiveAvatar
-  let apiKey = null;
   try {
-    apiKey = heygen.apiKeyEncrypted ? decryptSecret(heygen.apiKeyEncrypted) : null;
-  } catch (e) {
-    // ignore decryption errors
-  }
-  if (!apiKey) {
-    // Fallback : clé par défaut depuis les variables d'env
-    if (config.liveavatarApiKey) {
-      try {
-        const avatarId = heygen.avatarId || config.liveavatarAvatarId || '65f9e3c9-d48b-4118-b73a-4ae2e3cbb8f0';
-        const tokenData = await createSessionToken(config.liveavatarApiKey, avatarId, heygen.mode || 'LITE');
-        return res.json({ token: tokenData.session_token, sessionId: tokenData.session_id });
-      } catch (e) {
-        console.error('[heygen/start] fallback error:', e);
-        return res.status(500).json({ error: 'heygen_start_failed', detail: e.message });
-      }
+    console.log('[heygen/start] start handler for bot', req.params.id);
+    const bot = await getBot(req.params.id);
+    console.log('[heygen/start] bot fetched:', bot?.id);
+    if (!bot) return res.status(404).json({ error: 'not_found' });
+    applyCors(req, res, bot);
+
+    const heygen = getHeyGenConfig(bot);
+    console.log('[heygen/start] heygen config:', JSON.stringify(heygen).slice(0, 200));
+    if (!heygen.enabled) {
+      return res.status(400).json({ error: 'heygen_not_enabled' });
     }
-    return res.status(400).json({ error: 'heygen_api_key_missing' });
-  }
 
-  try {
-    const mode = heygen.mode || 'LITE';
-    const tokenData = await createSessionToken(apiKey, heygen.avatarId, mode);
-    res.json({
-      token: tokenData.session_token,
-      sessionId: tokenData.session_id,
-    });
+    // Décrypter la clé API LiveAvatar
+    let apiKey = null;
+    try {
+      apiKey = heygen.apiKeyEncrypted ? decryptSecret(heygen.apiKeyEncrypted) : null;
+    } catch (e) {
+      // ignore decryption errors
+    }
+    console.log('[heygen/start] apiKey resolved:', apiKey ? 'yes' : 'no');
+    if (!apiKey) {
+      // Fallback : clé par défaut depuis les variables d'env
+      console.log('[heygen/start] trying fallback, liveavatarApiKey present:', !!config.liveavatarApiKey);
+      if (config.liveavatarApiKey) {
+        try {
+          const avatarId = heygen.avatarId || config.liveavatarAvatarId || '65f9e3c9-d48b-4118-b73a-4ae2e3cbb8f0';
+          console.log('[heygen/start] calling createSessionToken with avatarId:', avatarId);
+          const tokenData = await createSessionToken(config.liveavatarApiKey, avatarId, heygen.mode || 'LITE');
+          console.log('[heygen/start] success, session:', tokenData.session_id);
+          return res.json({ token: tokenData.session_token, sessionId: tokenData.session_id });
+        } catch (e) {
+          console.error('[heygen/start] fallback error:', e);
+          return res.status(500).json({ error: 'heygen_start_failed', detail: e.message });
+        }
+      }
+      return res.status(400).json({ error: 'heygen_api_key_missing' });
+    }
+
+    try {
+      const mode = heygen.mode || 'LITE';
+      const tokenData = await createSessionToken(apiKey, heygen.avatarId, mode);
+      res.json({
+        token: tokenData.session_token,
+        sessionId: tokenData.session_id,
+      });
+    } catch (e) {
+      console.error('[heygen/start] error:', e);
+      res.status(500).json({ error: 'heygen_start_failed', detail: e.message });
+    }
   } catch (e) {
-    console.error('[heygen/start] error:', e);
-    res.status(500).json({ error: 'heygen_start_failed', detail: e.message });
+    console.error('[heygen/start] UNCAUGHT error:', e);
+    res.status(500).json({ error: 'internal_error', detail: e.message });
   }
 });
 
