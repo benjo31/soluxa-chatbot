@@ -39,6 +39,12 @@ export async function createSessionToken(apiKey, avatarId, mode = 'LITE', voiceI
         // Default voice: Elenora - Professional (meilleur accent français)
         reqBody.avatar_persona.voice_id = '254ffe1e-c89f-430f-8c36-9e7611d310c0';
       }
+      // ElevenLabs integration for native French voice
+      const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
+      if (elevenLabsApiKey) {
+        reqBody.avatar_persona.elevenlabs_voice_id = 'YxrwjAKoUKULGd0g8K9Y';
+        reqBody.elevenlabs_api_key = elevenLabsApiKey;
+      }
     }
     const res = await fetch(`${LIVEAVATAR_API_BASE}/v1/sessions/token`, {
       method: 'POST',
