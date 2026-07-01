@@ -146,6 +146,7 @@
       toast('Reconnaissance vocale non supportée');
       return;
     }
+    console.log('[voice] startVoiceInput called', { inputEl: !!inputEl, sendCallback: !!sendCallback, micBtn: !!micBtn, alreadyRecording: micBtn.classList.contains('sx-recording') });
     // Check if already recording
     if (micBtn.classList.contains('sx-recording')) {
       // Stop recording
@@ -643,9 +644,11 @@
     if (isVoiceSupported) {
       micBtnText.addEventListener('click', (e) => {
         e.preventDefault();
+        console.log('[voice] mic clicked, starting voice input');
         startVoiceInput(input, (text) => sendMessage(text), micBtnText);
       });
     } else {
+      console.log('[voice] not supported, hiding mic button');
       micBtnText.style.display = 'none';
     }
     // Insert mic before send button
