@@ -402,12 +402,25 @@
 
       @media (max-width: 480px) {
         .sx-panel {
-          width: calc(100vw - 16px); height: calc(100vh - 100px); right: 8px; bottom: 80px;
+          width: 100vw !important; height: 100dvh !important;
+          right: 0 !important; bottom: 0 !important;
+          max-width: 100vw !important; max-height: 100dvh !important;
+          border-radius: 0 !important;
+          position: fixed !important;
+          inset: 0 !important;
+          z-index: 2147483647 !important;
+        }
+        .sx-launcher {
+          display: none !important;
+        }
+        .sx-panel .sx-close {
+          font-size: 26px !important;
+          padding: 8px 12px !important;
         }
         /* Avatar overlay fullscreen on mobile */
         .sx-avatar-overlay {
           position: fixed !important; inset: 0 !important;
-          border-radius: 0 !important; z-index: 2147483647 !important;
+          border-radius: 0 !important; z-index: 2147483648 !important;
         }
         .sx-avatar-overlay .sx-av-head {
           padding: 44px 16px 0 !important;
