@@ -413,9 +413,6 @@
           inset: 0 !important;
           z-index: 2147483647 !important;
         }
-        .sx-launcher {
-          display: none !important;
-        }
         .sx-panel .sx-close {
           font-size: 26px !important;
           padding: 8px 12px !important;
@@ -975,7 +972,7 @@
     };
     const closePanel = () => {
       panel.classList.remove('sx-open');
-      launcher.style.display = isMobile() ? 'none' : 'flex';
+      launcher.style.display = 'flex';
     };
     launcher.addEventListener('click', openPanel);
     closeBtn.addEventListener('click', closePanel);
