@@ -147,7 +147,7 @@
     const accent = brand.accentColor || title;
     const font = brand.font || "'Source Sans Pro', sans-serif";
     return `
-      :host { all: initial; }
+      :host { all: initial; display: block; position: fixed; inset: 0; width: 100vw; height: 100dvh; pointer-events: none; z-index: 2147483645; }
       * { box-sizing: border-box; font-family: ${font}; }
       .sx-launcher {
         position: fixed; bottom: 24px; right: 24px;
@@ -157,6 +157,7 @@
         box-shadow: 0 8px 24px rgba(0,0,0,0.18);
         cursor: pointer; border: none; z-index: 2147483646;
         transition: transform .15s ease;
+        pointer-events: auto;
       }
       .sx-launcher:hover { transform: scale(1.06); }
       .sx-launcher svg { width: 26px; height: 26px; fill: #fff; }
@@ -171,6 +172,7 @@
         display: none; flex-direction: column;
         overflow: hidden; z-index: 2147483647;
         animation: sxSlide .25s ease;
+        pointer-events: auto;
       }
       .sx-panel.sx-open { display: flex; }
       @keyframes sxSlide {
@@ -284,6 +286,7 @@
         flex-direction: column;
         border-radius: 16px;
         overflow: hidden;
+        pointer-events: auto;
       }
       .sx-avatar-overlay.sx-open { display: flex; }
       .sx-avatar-overlay .sx-av-head {
