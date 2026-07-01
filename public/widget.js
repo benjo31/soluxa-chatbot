@@ -644,6 +644,11 @@
       if (!avatarOverlay) return;
       avatarOverlay.classList.remove('sx-open');
       if (avatarBtn) avatarBtn.classList.remove('sx-active');
+      // Reset inline styles
+      avatarOverlay.style.position = '';
+      avatarOverlay.style.inset = '';
+      avatarOverlay.style.borderRadius = '';
+      avatarOverlay.style.zIndex = '';
       avatarReady = false;
       // Clear transcript
       if (avTranscript) {
@@ -668,6 +673,13 @@
       if (!avatarOverlay) return;
       avatarOverlay.classList.add('sx-open');
       if (avatarBtn) avatarBtn.classList.add('sx-active');
+      if (isMobile()) {
+        // Ensure fullscreen for avatar as well
+        avatarOverlay.style.position = 'fixed';
+        avatarOverlay.style.inset = '0';
+        avatarOverlay.style.borderRadius = '0';
+        avatarOverlay.style.zIndex = '2147483648';
+      }
       const avInputEl = avatarOverlay.querySelector('.sx-av-input');
       setTimeout(() => avInputEl?.focus(), 100);
       avatarStatus('🚀 Connexion…');
@@ -911,10 +923,65 @@
     });
 
     // -------- Behaviors --------
-    const openPanel = () => { panel.classList.add('sx-open'); launcher.style.display = 'none'; setTimeout(() => input.focus(), 100); };
-    const closePanel = () => { panel.classList.remove('sx-open'); launcher.style.display = 'flex'; };
+    // Mobile detection & style application (fallback robuste en plus de la media query)
+    function isMobile() {
+      return window.innerWidth <= 480;
+    }
+    function applyMobileStyles() {
+      if (isMobile()) {
+        panel.style.width = '100vw';
+        panel.style.height = '100dvh';
+        panel.style.maxWidth = '100vw';
+        panel.style.maxHeight = '100dvh';
+        panel.style.right = '0';
+        panel.style.bottom = '0';
+        panel.style.top = '0';
+        panel.style.left = '0';
+        panel.style.borderRadius = '0';
+        panel.style.position = 'fixed';
+        if (avatarOverlay && avatarOverlay.classList.contains('sx-open')) {
+          avatarOverlay.style.position = 'fixed';
+          avatarOverlay.style.inset = '0';
+          avatarOverlay.style.borderRadius = '0';
+          avatarOverlay.style.zIndex = '2147483648';
+        }
+      } else {
+        panel.style.width = '';
+        panel.style.height = '';
+        panel.style.maxWidth = '';
+        panel.style.maxHeight = '';
+        panel.style.right = '';
+        panel.style.bottom = '';
+        panel.style.top = '';
+        panel.style.left = '';
+        panel.style.borderRadius = '';
+        panel.style.position = '';
+        if (avatarOverlay) {
+          avatarOverlay.style.position = '';
+          avatarOverlay.style.inset = '';
+          avatarOverlay.style.borderRadius = '';
+          avatarOverlay.style.zIndex = '';
+        }
+      }
+    }
+    const openPanel = () => {
+      panel.classList.add('sx-open');
+      launcher.style.display = 'none';
+      applyMobileStyles();
+      setTimeout(() => input.focus(), 100);
+    };
+    const closePanel = () => {
+      panel.classList.remove('sx-open');
+      launcher.style.display = isMobile() ? 'none' : 'flex';
+    };
     launcher.addEventListener('click', openPanel);
     closeBtn.addEventListener('click', closePanel);
+    // Re-apply mobile styles on resize (orientation change, split screen, etc.)
+    window.addEventListener('resize', () => {
+      if (panel.classList.contains('sx-open')) {
+        applyMobileStyles();
+      }
+    });
 
     // Reset conversation
     resetBtn.addEventListener('click', async (e) => {
