@@ -113,6 +113,13 @@
     return el;
   }
 
+  // Simple HTML escape for safe innerHTML
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.appendChild(document.createTextNode(str));
+    return div.innerHTML;
+  }
+
   // Simple toast notification
   function toast(msg) {
     const t = document.createElement('div');
@@ -304,11 +311,36 @@
       }
       .sx-avatar-overlay .sx-av-status {
         text-align: center;
-        padding: 0 16px 8px;
-        min-height: 20px;
-        font-size: 12px; color: rgba(255,255,255,0.35);
-        max-height: 80px; overflow-y: auto; word-break: break-word;
-        line-height: 1.4;
+        padding: 0 16px 4px;
+        min-height: 18px;
+        font-size: 11px; color: rgba(255,255,255,0.3);
+        max-height: 24px; overflow-y: auto; word-break: break-word;
+        line-height: 1.3;
+      }
+      .sx-avatar-overlay .sx-av-transcript {
+        max-height: 100px; overflow-y: auto;
+        padding: 0 16px 6px;
+        font-size: 13px; color: rgba(255,255,255,0.75);
+        line-height: 1.45; text-align: center;
+        word-break: break-word; white-space: pre-wrap;
+        scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.15) transparent;
+      }
+      .sx-avatar-overlay .sx-av-transcript.sx-has-text {
+        color: #fff;
+      }
+      .sx-avatar-overlay .sx-av-transcript .sx-av-typed-text {
+        opacity: 0.95;
+      }
+      .sx-avatar-overlay .sx-av-transcript .sx-av-cursor {
+        display: inline-block;
+        width: 2px; height: 14px;
+        background: rgba(255,255,255,0.6);
+        margin-left: 2px;
+        animation: sxBlink 0.7s step-end infinite;
+        vertical-align: text-bottom;
+      }
+      @keyframes sxBlink {
+        50% { opacity: 0; }
       }
       .sx-avatar-overlay .sx-av-status .sx-av-dots span {
         display: inline-block; width: 5px; height: 5px;
@@ -371,6 +403,27 @@
       @media (max-width: 480px) {
         .sx-panel {
           width: calc(100vw - 16px); height: calc(100vh - 100px); right: 8px; bottom: 80px;
+        }
+        /* Avatar overlay fullscreen on mobile */
+        .sx-avatar-overlay {
+          position: fixed !important; inset: 0 !important;
+          border-radius: 0 !important; z-index: 2147483647 !important;
+        }
+        .sx-avatar-overlay .sx-av-head {
+          padding: 44px 16px 0 !important;
+        }
+        .sx-avatar-overlay .sx-av-video {
+          padding: 4px 12px !important;
+        }
+        .sx-avatar-overlay .sx-av-video video {
+          max-width: 100%; max-height: 100%;
+          border-radius: 12px;
+        }
+        .sx-avatar-overlay .sx-av-transcript {
+          padding: 0 20px 6px !important;
+        }
+        .sx-avatar-overlay .sx-av-footer {
+          padding: 12px 16px 24px !important;
         }
       }
     `;
@@ -460,9 +513,11 @@
     // Avatar DOM elements (created inside if(heygenEnabled))
     let avVideo = null;
     let avStatus = null;
+    let avTranscript = null;
     let avInput = null;
     let avSend = null;
     let avBack = null;
+    let avClose = null;
 
     function avatarStatus(msg) {
       if (avStatus) avStatus.textContent = msg;
@@ -471,9 +526,11 @@
     if (heygenEnabled) {
       avVideo = h('video', { autoplay: true, muted: true, playsinline: true });
       avStatus = h('div', { class: 'sx-av-status' }, 'Appuyez sur Entrée pour parler à Lumia');
+      avTranscript = h('div', { class: 'sx-av-transcript' });
       avInput = h('input', { class: 'sx-av-input', type: 'text', placeholder: 'Écrivez votre message…', autocomplete: 'off' });
       avSend = h('button', { class: 'sx-av-send' }, 'Envoyer');
       avBack = h('button', { class: 'sx-av-back' }, '←  Chat');
+      avClose = h('button', { class: 'sx-close', 'aria-label': 'Fermer', style: 'position:absolute;right:12px;top:12px;background:rgba(255,255,255,0.08);border:none;color:#fff;font-size:20px;line-height:1;padding:4px 10px;border-radius:8px;cursor:pointer;z-index:1;' }, '×');
       const avFooter = h('div', { class: 'sx-av-footer' },
         h('div', { class: 'sx-av-input-row' }, avInput, avSend)
       );
@@ -481,14 +538,17 @@
       avatarOverlay = h('div', { class: 'sx-avatar-overlay' },
         h('div', { class: 'sx-av-head' },
           avBack,
+          avClose,
           h('span', { class: 'sx-av-name' }, '🎭  ' + (config.name || 'Assistant'))
         ),
         h('div', { class: 'sx-av-video' }, avVideo),
+        avTranscript,
         avStatus,
         avFooter
       );
 
       avBack.addEventListener('click', closeAvatarMode);
+      avClose.addEventListener('click', closeAvatarMode);
       avSend.addEventListener('click', () => avatarSend(avInput.value));
       avInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') { e.preventDefault(); avatarSend(avInput.value); }
@@ -504,6 +564,11 @@
       avInput.value = '';
       if (avSend) avSend.disabled = true;
       avatarStatus('🧠 Réflexion…');
+      // Show user message in transcript
+      if (avTranscript) {
+        avTranscript.innerHTML = '';
+        avTranscript.classList.remove('sx-has-text');
+      }
       try {
         console.log('[avatar] sending:', text);
         await ensureConversation();
@@ -523,6 +588,26 @@
         }
         const data = await resp.json();
         const reply = data.reply || '';
+
+        // Show transcription with typing effect
+        if (reply.trim() && avTranscript) {
+          avTranscript.classList.add('sx-has-text');
+          // Type out the reply character by character
+          let idx = 0;
+          const typeInterval = setInterval(() => {
+            if (idx < reply.length) {
+              // Show text up to current idx with cursor
+              const displayed = reply.slice(0, idx + 1);
+              avTranscript.innerHTML = `<span class="sx-av-typed-text">${escapeHtml(displayed)}</span><span class="sx-av-cursor"></span>`;
+              idx++;
+              avTranscript.scrollTop = avTranscript.scrollHeight;
+            } else {
+              clearInterval(typeInterval);
+              // Final: full text without cursor
+              avTranscript.innerHTML = `<span class="sx-av-typed-text">${escapeHtml(reply)}</span>`;
+            }
+          }, 25); // ~25ms per char = smooth typing
+        }
 
         if (reply.trim()) {
           avatarStatus('🎙 Lumia parle…');
@@ -547,6 +632,11 @@
       avatarOverlay.classList.remove('sx-open');
       if (avatarBtn) avatarBtn.classList.remove('sx-active');
       avatarReady = false;
+      // Clear transcript
+      if (avTranscript) {
+        avTranscript.innerHTML = '';
+        avTranscript.classList.remove('sx-has-text');
+      }
       if (avatarSession) {
         try {
           avatarSession.stop().catch(() => {});
