@@ -638,11 +638,18 @@
     const footerChildren = avatarBtn
       ? [h('div', { class: 'sx-input-row' }, avatarBtn, input, sendBtn)]
       : [h('div', { class: 'sx-input-row' }, input, sendBtn)];
-    // Microphone button (client-side only, inserted after input-row)
+    // Microphone button — attach listener directly at creation
     const micBtnText = h('button', { class: 'sx-mic-btn', title: 'Envoyer un message vocal', 'aria-label': 'Message vocal' }, micSvg());
+    if (isVoiceSupported) {
+      micBtnText.addEventListener('click', (e) => {
+        e.preventDefault();
+        startVoiceInput(input, (text) => sendMessage(text), micBtnText);
+      });
+    } else {
+      micBtnText.style.display = 'none';
+    }
     // Insert mic before send button
     if (avatarBtn) {
-      // 3 children: avatarBtn, input, sendBtn -> add mic after input
       footerChildren[0] = h('div', { class: 'sx-input-row' }, avatarBtn, input, micBtnText, sendBtn);
     } else {
       footerChildren[0] = h('div', { class: 'sx-input-row' }, input, micBtnText, sendBtn);
@@ -687,6 +694,12 @@
       const avMicBtn = isVoiceSupported
         ? h('button', { class: 'sx-av-mic-btn', title: 'Message vocal', 'aria-label': 'Message vocal' }, micSvg())
         : null;
+      if (avMicBtn) {
+        avMicBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          startVoiceInput(avInput, (text) => avatarSend(text), avMicBtn);
+        });
+      }
       avBack = h('button', { class: 'sx-av-back' }, '←  Chat');
       avClose = h('button', { class: 'sx-close', 'aria-label': 'Fermer', style: 'position:absolute;right:12px;top:12px;background:rgba(255,255,255,0.08);border:none;color:#fff;font-size:20px;line-height:1;padding:4px 10px;border-radius:8px;cursor:pointer;z-index:1;' }, '×');
       const avFooter = h('div', { class: 'sx-av-footer' },
@@ -711,12 +724,6 @@
       avInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') { e.preventDefault(); avatarSend(avInput.value); }
       });
-      // Voice input for avatar mode
-      if (avMicBtn) {
-        avMicBtn.addEventListener('click', () => {
-          startVoiceInput(avInput, (text) => avatarSend(text), avMicBtn);
-        });
-      }
     }
 
     // Avatar send logic — gets LLM reply, then sends to avatar SDK
@@ -1282,20 +1289,6 @@
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); sendMessage(input.value); }
     });
-
-    // Voice input for text mode
-    if (isVoiceSupported) {
-      const micBtn = shadow.querySelector('.sx-mic-btn');
-      if (micBtn) {
-        micBtn.addEventListener('click', () => {
-          startVoiceInput(input, (text) => sendMessage(text), micBtn);
-        });
-      }
-    } else {
-      // Hide mic button if not supported
-      const micBtn = shadow.querySelector('.sx-mic-btn');
-      if (micBtn) micBtn.style.display = 'none';
-    }
   }
 
   if (document.readyState === 'loading') {
