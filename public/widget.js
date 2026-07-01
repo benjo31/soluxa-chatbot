@@ -120,6 +120,102 @@
     return div.innerHTML;
   }
 
+  // SVG microphone icon (inline)
+  function micSvg() {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', 'M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z');
+    svg.appendChild(path);
+    return svg;
+  }
+
+  // -------- Voice input (Web Speech API) --------
+  let voiceRecognition = null;
+  let isVoiceSupported = false;
+
+  function initVoice() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    isVoiceSupported = !!SpeechRecognition;
+    return isVoiceSupported;
+  }
+  initVoice();
+
+  function startVoiceInput(inputEl, sendCallback, micBtn) {
+    if (!isVoiceSupported) {
+      toast('Reconnaissance vocale non supportée');
+      return;
+    }
+    // Check if already recording
+    if (micBtn.classList.contains('sx-recording')) {
+      // Stop recording
+      if (voiceRecognition) {
+        voiceRecognition.abort();
+        voiceRecognition = null;
+      }
+      micBtn.classList.remove('sx-recording');
+      return;
+    }
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'fr-FR';
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+
+    voiceRecognition = recognition;
+    micBtn.classList.add('sx-recording');
+    inputEl.placeholder = '🎤 Parlez...';
+
+    recognition.onresult = (event) => {
+      let interim = '';
+      let final = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          final += transcript;
+        } else {
+          interim += transcript;
+        }
+      }
+      inputEl.value = final || interim;
+      // Auto-scroll to keep cursor visible
+      inputEl.selectionStart = inputEl.selectionEnd = inputEl.value.length;
+    };
+
+    recognition.onerror = (event) => {
+      console.warn('[voice] error:', event.error);
+      micBtn.classList.remove('sx-recording');
+      inputEl.placeholder = 'Écrivez votre message…';
+      voiceRecognition = null;
+      if (event.error === 'no-speech') {
+        toast('Aucune parole détectée');
+      } else if (event.error === 'not-allowed') {
+        toast('Microphone non autorisé');
+      }
+    };
+
+    recognition.onend = () => {
+      micBtn.classList.remove('sx-recording');
+      inputEl.placeholder = 'Écrivez votre message…';
+      voiceRecognition = null;
+      // Auto-send if we got text
+      const text = inputEl.value.trim();
+      if (text) {
+        sendCallback(text);
+        inputEl.value = '';
+      }
+    };
+
+    try {
+      recognition.start();
+    } catch (e) {
+      console.warn('[voice] start error:', e);
+      micBtn.classList.remove('sx-recording');
+      voiceRecognition = null;
+    }
+  }
+
   // Simple toast notification
   function toast(msg) {
     const t = document.createElement('div');
@@ -234,6 +330,28 @@
         border-radius: 10px; padding: 0 14px; cursor: pointer; font-weight: 600;
       }
       .sx-send:disabled { opacity: .5; cursor: not-allowed; }
+      /* Voice input button */
+      .sx-mic-btn {
+        background: none; border: none; cursor: pointer;
+        width: 36px; height: 36px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0; padding: 0;
+        transition: all 0.2s ease;
+        color: ${text};
+        opacity: 0.5;
+      }
+      .sx-mic-btn:hover { opacity: 0.8; }
+      .sx-mic-btn.sx-recording {
+        opacity: 1;
+        background: #e53935;
+        color: #fff;
+        animation: sxMicPulse 0.8s ease-in-out infinite;
+      }
+      @keyframes sxMicPulse {
+        0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(229,57,53,0.5); }
+        50% { transform: scale(1.08); box-shadow: 0 0 0 10px rgba(229,57,53,0); }
+      }
+      .sx-mic-btn svg { width: 18px; height: 18px; fill: currentColor; }
       .sx-poweredby { text-align: center; font-size: 11px; color: rgba(0,0,0,0.45); padding: 6px 0 2px; }
       .sx-poweredby a { color: inherit; text-decoration: none; }
 
@@ -373,6 +491,21 @@
         border-radius: 10px; padding: 0 16px; cursor: pointer; font-weight: 600;
       }
       .sx-avatar-overlay .sx-av-send:disabled { opacity: 0.3; cursor: not-allowed; }
+      .sx-avatar-overlay .sx-av-mic-btn {
+        background: none; border: none; cursor: pointer;
+        width: 36px; height: 36px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0; padding: 0;
+        transition: all 0.2s ease;
+        color: rgba(255,255,255,0.4);
+      }
+      .sx-avatar-overlay .sx-av-mic-btn:hover { color: rgba(255,255,255,0.7); }
+      .sx-avatar-overlay .sx-av-mic-btn.sx-recording {
+        color: #fff;
+        background: #e53935;
+        animation: sxMicPulse 0.8s ease-in-out infinite;
+      }
+      .sx-avatar-overlay .sx-av-mic-btn svg { width: 18px; height: 18px; fill: currentColor; }
 
       /* Lead form modal */
       .sx-modal-backdrop {
@@ -505,6 +638,15 @@
     const footerChildren = avatarBtn
       ? [h('div', { class: 'sx-input-row' }, avatarBtn, input, sendBtn)]
       : [h('div', { class: 'sx-input-row' }, input, sendBtn)];
+    // Microphone button (client-side only, inserted after input-row)
+    const micBtnText = h('button', { class: 'sx-mic-btn', title: 'Envoyer un message vocal', 'aria-label': 'Message vocal' }, micSvg());
+    // Insert mic before send button
+    if (avatarBtn) {
+      // 3 children: avatarBtn, input, sendBtn -> add mic after input
+      footerChildren[0] = h('div', { class: 'sx-input-row' }, avatarBtn, input, micBtnText, sendBtn);
+    } else {
+      footerChildren[0] = h('div', { class: 'sx-input-row' }, input, micBtnText, sendBtn);
+    }
     footerChildren.push(h('div', { class: 'sx-poweredby' }, 'Propulsé par Soluxa'));
     const footer = h('div', { class: 'sx-footer' }, ...footerChildren);
 
@@ -542,10 +684,13 @@
       avTranscript = h('div', { class: 'sx-av-transcript' });
       avInput = h('input', { class: 'sx-av-input', type: 'text', placeholder: 'Écrivez votre message…', autocomplete: 'off' });
       avSend = h('button', { class: 'sx-av-send' }, 'Envoyer');
+      const avMicBtn = isVoiceSupported
+        ? h('button', { class: 'sx-av-mic-btn', title: 'Message vocal', 'aria-label': 'Message vocal' }, micSvg())
+        : null;
       avBack = h('button', { class: 'sx-av-back' }, '←  Chat');
       avClose = h('button', { class: 'sx-close', 'aria-label': 'Fermer', style: 'position:absolute;right:12px;top:12px;background:rgba(255,255,255,0.08);border:none;color:#fff;font-size:20px;line-height:1;padding:4px 10px;border-radius:8px;cursor:pointer;z-index:1;' }, '×');
       const avFooter = h('div', { class: 'sx-av-footer' },
-        h('div', { class: 'sx-av-input-row' }, avInput, avSend)
+        h('div', { class: 'sx-av-input-row' }, avInput, avMicBtn, avSend)
       );
 
       avatarOverlay = h('div', { class: 'sx-avatar-overlay' },
@@ -566,6 +711,12 @@
       avInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') { e.preventDefault(); avatarSend(avInput.value); }
       });
+      // Voice input for avatar mode
+      if (avMicBtn) {
+        avMicBtn.addEventListener('click', () => {
+          startVoiceInput(avInput, (text) => avatarSend(text), avMicBtn);
+        });
+      }
     }
 
     // Avatar send logic — gets LLM reply, then sends to avatar SDK
@@ -1131,6 +1282,20 @@
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); sendMessage(input.value); }
     });
+
+    // Voice input for text mode
+    if (isVoiceSupported) {
+      const micBtn = shadow.querySelector('.sx-mic-btn');
+      if (micBtn) {
+        micBtn.addEventListener('click', () => {
+          startVoiceInput(input, (text) => sendMessage(text), micBtn);
+        });
+      }
+    } else {
+      // Hide mic button if not supported
+      const micBtn = shadow.querySelector('.sx-mic-btn');
+      if (micBtn) micBtn.style.display = 'none';
+    }
   }
 
   if (document.readyState === 'loading') {
