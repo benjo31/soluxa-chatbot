@@ -11,7 +11,7 @@ import { chatStream } from '../chat.js';
 import { createSessionToken, listAvatars, listPublicAvatars, listVoices, testApiKey, getHeyGenConfig, setHeyGenConfig } from '../heygen.js';
 
 export const adminRouter = express.Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 const SOLUXA_BRANDING = {
   titleColor: '#62a70f',

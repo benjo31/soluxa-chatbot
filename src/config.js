@@ -27,7 +27,7 @@ export const config = {
   adminEmail: process.env.ADMIN_EMAIL || 'admin@soluxa.ch',
   adminPassword: process.env.ADMIN_PASSWORD || 'changeme',
   enableOcr: process.env.ENABLE_OCR === '1',
-  maxKnowledgeChars: 80000,
+  maxKnowledgeChars: parseInt(process.env.MAX_KNOWLEDGE_CHARS || '500000', 10),
   conversationWindow: 12,
 
   // LLM — variable d'environnement (Render) plutôt que stockée par bot
