@@ -55,6 +55,8 @@ function serializeBot(b) {
   const { llm_api_key_encrypted, ...rest } = b;
   return {
     ...rest,
+    // Indicateur (sans exposer la clé) : une clé par-bot est-elle enregistrée ?
+    has_llm_api_key: !!llm_api_key_encrypted,
     branding_json: b.branding_json ? JSON.parse(b.branding_json) : SOLUXA_BRANDING,
     contact_info_json: b.contact_info_json ? JSON.parse(b.contact_info_json) : {},
   };
@@ -113,6 +115,17 @@ adminRouter.put('/bots/:id', async (req, res) => {
         updates[k] = typeof req.body[k] === 'boolean' ? (req.body[k] ? 1 : 0) : req.body[k];
       }
     }
+    // Clé API LLM par-bot : chiffrée et stockés dans llm_api_key_encrypted
+    if ('llm_api_key' in req.body) {
+      const rawKey = req.body.llm_api_key;
+      // Chaîne vide => retirer la clé par-bot (on retombe sur la clé globale du provider)
+      if (rawKey && String(rawKey).trim()) {
+        const enc = encryptSecret(String(rawKey).trim());
+        if (enc) updates.llm_api_key_encrypted = enc;
+      } else {
+        updates.llm_api_key_encrypted = null;
+      }
+    }
     if ('contact_info' in req.body) {
       updates.contact_info_json = JSON.stringify(req.body.contact_info);
     }
@@ -144,9 +157,9 @@ adminRouter.post('/bots/:id/test-llm', async (req, res) => {
   const { data: b, error } = await sb.from('bots').select('*').eq('id', req.params.id).maybeSingle();
   if (error) return res.status(500).json({ error: error.message });
   if (!b) return res.status(404).json({ error: 'not_found' });
-  const apiKey = req.body?.llm_api_key || config.llmApiKey || decryptSecret(b.llm_api_key_encrypted);
-  if (!apiKey) return res.status(400).json({ error: 'no_api_key' });
   const provider = req.body?.llm_provider || b.llm_provider || 'openai';
+  const apiKey = req.body?.llm_api_key || (provider === 'deepseek' ? config.deepseekApiKey : config.llmApiKey) || decryptSecret(b.llm_api_key_encrypted);
+  if (!apiKey) return res.status(400).json({ error: 'no_api_key' });
   const model = req.body?.llm_model || b.llm_model;
   try {
     const ok = await testKey(provider, { apiKey, model });

@@ -79,7 +79,9 @@ export async function* chatStream({ bot, conversationId, userMessage }) {
   const history = (rawHistory || []).reverse();
   history.push({ role: 'user', content: userMessage });
 
-  const apiKey = decryptSecret(bot.llm_api_key_encrypted) || config.llmApiKey;
+  const provider = bot.llm_provider || 'openai';
+  const globalKey = provider === 'deepseek' ? config.deepseekApiKey : config.llmApiKey;
+  const apiKey = decryptSecret(bot.llm_api_key_encrypted) || globalKey;
   if (!apiKey) {
     yield 'La configuration du chatbot est incomplète (clé API manquante). Merci de contacter l\'administrateur.';
     return;
@@ -87,7 +89,7 @@ export async function* chatStream({ bot, conversationId, userMessage }) {
 
   let full = '';
   try {
-    for await (const delta of streamChat(bot.llm_provider || 'openai', {
+    for await (const delta of streamChat(provider, {
       apiKey,
       model: bot.llm_model,
       system: sys,

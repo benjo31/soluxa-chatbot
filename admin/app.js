@@ -377,29 +377,126 @@ function renderLlm(c) {
   const card = el('div', { class: 'card' });
 
   card.appendChild(el('p', { class: 'muted' },
-    'La clé API OpenAI est définie via la variable d\'environnement LLM_API_KEY sur Render. ' +
-    'Aucune configuration de clé n\'est nécessaire ici.'
+    'Choisissez le fournisseur et le modèle. Une clé API peut être définie globalement ' +
+    '(variables d\u0027environnement sur Render) ou par chatbot ici — la clé par-chatbot a priorité. ' +
+    'Les clés sont stockées chiffrées et ne sont jamais ré-affichées.'
   ));
 
   const providerSelect = el('select', {},
     el('option', { value: 'openai' }, 'OpenAI'),
-    el('option', { value: 'anthropic' }, 'Anthropic (Claude)')
+    el('option', { value: 'anthropic' }, 'Anthropic (Claude)'),
+    el('option', { value: 'deepseek' }, 'DeepSeek')
   );
   providerSelect.value = b.llm_provider || 'openai';
 
-  const modelInput = el('input', { type: 'text', value: b.llm_model || (providerSelect.value === 'anthropic' ? 'claude-haiku-4-5' : 'gpt-4o-mini') });
+  const modelInput = el('input', { type: 'text', value: b.llm_model || (providerSelect.value === 'anthropic' ? 'claude-haiku-4-5' : (providerSelect.value === 'deepseek' ? 'deepseek-chat' : 'gpt-4o-mini')) });
   providerSelect.addEventListener('change', () => {
-    modelInput.value = providerSelect.value === 'anthropic' ? 'claude-haiku-4-5' : 'gpt-4o-mini';
+    modelInput.value = providerSelect.value === 'anthropic' ? 'claude-haiku-4-5' : (providerSelect.value === 'deepseek' ? 'deepseek-chat' : 'gpt-4o-mini');
+    updateKeyLabel();
   });
 
   card.appendChild(el('div', { class: 'form-grid' },
     el('div', { class: 'field' }, el('label', {}, 'Fournisseur'), providerSelect),
     el('div', { class: 'field' }, el('label', {}, 'Modèle'), modelInput)
   ));
+
+  // --- Clé API par-chatbot ---
+  // Indicateur visuel de clé enregistrée + champ de saisie (toujours vide au chargement)
+  const hasKey = !!b.has_llm_api_key;
+  const keyStatus = el('p', { class: 'muted', style: { marginTop: '12px' } });
+  const keyLabelTxt = el('span', {});
+
+  const keyInput = el('input', {
+    type: 'password',
+    placeholder: providerSelect.value === 'deepseek' ? 'sk-... (clé DeepSeek)' : providerSelect.value === 'anthropic' ? 'sk-ant-... (clé Anthropic)' : 'sk-... (clé OpenAI)',
+    autocomplete: 'off',
+  });
+
+  function updateKeyLabel() {
+    const p = providerSelect.value;
+    keyLabelTxt.textContent = hasKey
+      ? '✅ Clé enregistrée pour ce chatbot (masquée). Saisissez-en une nouvelle pour la remplacer, ou effacez pour utiliser la clé globale.'
+      : (p === 'deepseek'
+        ? 'Aucune clé par-chatbot. La clé globale DeepSeek (DEEPSEEK_API_KEY) sera utilisée.'
+        : p === 'anthropic'
+          ? 'Aucune clé par-chatbot. La clé globale Anthropic sera utilisée.'
+          : 'Aucune clé par-chatbot. La clé globale OpenAI (LLM_API_KEY) sera utilisée.');
+    keyStatus.innerHTML = '';
+    keyStatus.appendChild(keyLabelTxt);
+    keyInput.placeholder = p === 'deepseek' ? 'sk-... (clé DeepSeek)' : p === 'anthropic' ? 'sk-ant-... (clé Anthropic)' : 'sk-... (clé OpenAI)';
+  }
+  updateKeyLabel();
+
+  // Boutons d'action : tester / enregistrer / retirer la clé
+  const testBtn = el('button', { class: 'btn-secondary' }, 'Tester la clé');
+  testBtn.addEventListener('click', async () => {
+    testBtn.disabled = true; testBtn.textContent = 'Test en cours…';
+    try {
+      await api(`/api/admin/bots/${b.id}/test-llm`, {
+        method: 'POST',
+        body: JSON.stringify({
+          llm_provider: providerSelect.value,
+          llm_model: modelInput.value,
+          llm_api_key: keyInput.value.trim() || undefined,
+        }),
+      });
+      toast('Clé valide ✅');
+    } catch (e) {
+      toast('Clé invalide ❌ ' + e.message, false);
+    } finally {
+      testBtn.disabled = false; testBtn.textContent = 'Tester la clé';
+    }
+  });
+
+  const saveKeyBtn = el('button', { class: 'btn-primary' }, 'Enregistrer la clé');
+  saveKeyBtn.addEventListener('click', async () => {
+    try {
+      await api(`/api/admin/bots/${b.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          llm_provider: providerSelect.value,
+          llm_model: modelInput.value,
+          llm_api_key: keyInput.value.trim() || '',
+        }),
+      });
+      state.current = await api(`/api/admin/bots/${b.id}`);
+      toast('Clé enregistrée');
+      keyInput.value = '';
+      renderLlm(c);
+    } catch (e) {
+      toast('Erreur : ' + e.message, false);
+    }
+  });
+
+  // Bouton pour retirer la clé par-chatbot (revenir à la clé globale)
+  const clearKeyBtn = el('button', { class: 'btn-secondary' }, 'Utiliser la clé globale');
+  clearKeyBtn.style.display = hasKey ? '' : 'none';
+  clearKeyBtn.addEventListener('click', async () => {
+    try {
+      await api(`/api/admin/bots/${b.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ llm_api_key: '' }),
+      });
+      state.current = await api(`/api/admin/bots/${b.id}`);
+      toast('Clé par-chatbot supprimée');
+      keyInput.value = '';
+      renderLlm(c);
+    } catch (e) {
+      toast('Erreur : ' + e.message, false);
+    }
+  });
+
+  card.appendChild(keyStatus);
+  card.appendChild(el('div', { class: 'field', style: { marginTop: '10px' } },
+    el('label', {}, 'Clé API (par-chatbot, optionnel)'), keyInput
+  ));
+  card.appendChild(el('div', { style: { marginTop: '16px', display: 'flex', gap: '8px', flexWrap: 'wrap' } },
+    saveKeyBtn, testBtn, clearKeyBtn
+  ));
   card.appendChild(el('div', { style: { marginTop: '16px' } },
     el('button', { class: 'btn-primary', onclick: () => saveBot({
       llm_provider: providerSelect.value, llm_model: modelInput.value,
-    }) }, 'Enregistrer')
+    }) }, 'Enregistrer la configuration')
   ));
 
   c.appendChild(card);
