@@ -22,6 +22,10 @@ export const config = {
   // Local data dir (for uploads only now)
   databasePath: path.resolve(root, process.env.DATABASE_PATH || './data/soluxa.db'),
   uploadsPath: path.resolve(root, process.env.UPLOADS_PATH || './data/uploads'),
+  // IMPORTANT: MASTER_KEY (64 hex, AES-256-GCM pour chiffrer les clés API par-chatbot)
+  // et DEEPSEEK_API_KEY (clé globale DeepSeek) DOIVENT être définies sur Render.
+  // Sans MASTER_KEY, encryptSecret/decryptSecret retournent null => la clé API par-chatbot
+  // n'est jamais écrite en base (le PUT répond 200 mais le champ reste vide).
   masterKey: process.env.MASTER_KEY || null,
   sessionSecret: process.env.SESSION_SECRET || null,
   adminEmail: process.env.ADMIN_EMAIL || 'admin@soluxa.ch',
